@@ -197,7 +197,11 @@ jobs:
             Select-String -Pattern '^\s+Name:\s+(\S+)\s*$' |
             ForEach-Object { $_.Matches[0].Groups[1].Value }
           if ($needed -notcontains 'libmpv-2.dll') { throw 'the exe does not import libmpv-2.dll' }
+          # `api-ms-win-*` and `ext-ms-win-*` are API sets: they are not files anywhere, the loader
+          # resolves them through the schema, so looking for them on disk finds nothing and means
+          # nothing.
           $missing = $needed | Where-Object {
+            $_ -notmatch '^(api|ext)-ms-win-' -and
             -not (Test-Path (Join-Path $dir $_)) -and
             -not (Test-Path (Join-Path $env:SystemRoot "System32\$_"))
           }
