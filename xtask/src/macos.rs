@@ -10,11 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::run;
+use crate::{APP, BINARY, copy_into, run};
 
 const BUNDLE_ID: &str = "codes.loveless.drtv-desktop";
-const APP: &str = "DRTV";
-const BINARY: &str = "drtv-desktop";
 
 pub fn bundle(root: &Path) -> Result<(), String> {
     // **Release, always.** A debug build of this app is 300 MB and links the debug libmpv paths, and
@@ -116,18 +114,6 @@ fn write_plist(path: &Path) -> Result<(), String> {
 "#
     );
     std::fs::write(path, plist).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-fn copy_into(from: &Path, to: &Path) -> Result<(), String> {
-    // A library copied on an earlier run keeps its source's read-only mode, and copying over it
-    // fails with `Permission denied` — which reads like a permissions problem with Homebrew and is
-    // really just a bundle that has been built before.
-    if to.exists() {
-        let _ = std::fs::remove_file(to);
-    }
-    std::fs::copy(from, to)
-        .map(|_| ())
-        .map_err(|e| format!("{} → {}: {e}", from.display(), to.display()))
 }
 
 /// Every non-system library the binary needs, transitively, keyed by file name.

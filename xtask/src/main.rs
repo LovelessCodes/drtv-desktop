@@ -4,16 +4,26 @@
 //! from `drtv_ui::icon` — the same code that gives the window its icon at runtime, so the two can
 //! never disagree.
 //!
-//! `cargo xtask bundle` assembles a runnable `DRTV.app`: the binary, an `Info.plist`, the icon, and
-//! libmpv with everything it links against, install names rewritten so the bundle runs on a machine
-//! that has never seen Homebrew.
+//! `cargo xtask bundle` assembles what a platform can be handed: a `DRTV.app` whose install names
+//! are rewritten so it runs on a Mac that has never seen Homebrew, a Linux directory with libmpv's
+//! closure beside the binary and an `$ORIGIN` rpath joining them, or a Windows folder with
+//! `libmpv-2.dll` next to the exe. The common rule is that libmpv travels with the app; what it
+//! links against travels too, except for the pieces the operating system owns.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// macOS-only: `bundle` is the whole of it, and an unused module of dead code fails CI's lints.
+// One module per platform's `bundle`, gated so that the others are not dead code on this one — an
+// unused module of dead code fails CI's lints, and it should.
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
+
+pub(crate) const APP: &str = "DRTV";
+pub(crate) const BINARY: &str = "drtv-desktop";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -40,7 +50,7 @@ fn usage() {
         "cargo xtask <command>
 
   icon     draw the app icon into assets/icon/ (and an .icns on macOS)
-  bundle   assemble a runnable app bundle into target/ (macOS today)"
+  bundle   assemble what this platform ships: target/DRTV.app, or a directory with libmpv in it"
     );
 }
 
@@ -89,14 +99,27 @@ fn write_png(path: &Path, size: u32) -> Result<(), String> {
 }
 
 fn bundle() -> Result<(), String> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        Err("only the macOS bundle is written so far; Windows and Linux packaging come next".into())
-    }
+    #[cfg(target_os = "linux")]
+    let result = linux::bundle(&root());
     #[cfg(target_os = "macos")]
-    {
-        macos::bundle(&root())
+    let result = macos::bundle(&root());
+    #[cfg(target_os = "windows")]
+    let result = windows::bundle(&root());
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let result = Err(format!("there is no bundle for {}", std::env::consts::OS));
+    result
+}
+
+/// Copy a file into a bundle, replacing what an earlier run left there: a copied library keeps its
+/// source's read-only mode, and copying over one fails with `Permission denied`, which reads like a
+/// problem with the source and is really just a bundle that has been built before.
+pub(crate) fn copy_into(from: &Path, to: &Path) -> Result<(), String> {
+    if to.exists() {
+        let _ = std::fs::remove_file(to);
     }
+    std::fs::copy(from, to)
+        .map(|_| ())
+        .map_err(|e| format!("{} → {}: {e}", from.display(), to.display()))
 }
 
 fn root() -> PathBuf {

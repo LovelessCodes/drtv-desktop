@@ -16,19 +16,25 @@ because that is DR's decision, not this app's.
 
 ## Installing
 
-Download the `.zip` for your Mac from [the latest release][release], unzip it, and move `DRTV.app`
-wherever you keep applications. The bundle carries libmpv and everything libmpv links against, so it
-runs on a Mac that has never had Homebrew on it.
+From [the latest release][release], for the Mac, Linux or Windows. libmpv travels with the app in
+every case, together with everything libmpv links against that the operating system does not own.
 
-It is ad-hoc signed rather than notarised — there is no Apple developer account behind this — so the
-first launch needs **System Settings → Privacy & Security → Open Anyway**, or:
+**macOS** — unzip and move `DRTV.app` wherever you keep applications. It is ad-hoc signed rather
+than notarised (there is no Apple developer account behind this), so the first launch needs
+**System Settings → Privacy & Security → Open Anyway**, or:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/DRTV.app
 ```
 
-Linux and Windows build and run from source (see [Building](#building)) but have no packaged download
-yet. Their CI checks compile; the packaging for both is the next piece of work.
+**Linux** — unpack the tarball anywhere and run `./drtv-desktop` from inside it. The binary finds its
+libraries through an `$ORIGIN/lib` rpath, so the directory can live in `~/.local/opt`, on a USB
+stick, or wherever. `RUNNING.txt` inside has the two symlinks that put it on your `PATH` and in your
+application menu. It needs what any other desktop application needs: an X11 or Wayland client
+library, `libxkbcommon` (with `libxkbcommon-x11`), and a working GL driver.
+
+**Windows** — unzip and run `drtv-desktop.exe`. Keep `libmpv-2.dll` beside it; Windows looks for it
+next to the executable.
 
 [release]: https://github.com/LovelessCodes/drtv-desktop/releases/latest
 
@@ -53,7 +59,7 @@ yet. Their CI checks compile; the packaging for both is the next piece of work.
 
 ## Building
 
-Instead of a download, or for Linux and Windows: you need Rust 1.95 or newer and a system libmpv.
+Instead of a download: you need Rust 1.95 or newer and a system libmpv.
 
 ```sh
 # macOS
@@ -88,11 +94,18 @@ cargo xtask icon     # → assets/icon/ (PNG sizes, plus AppIcon.icns on macOS)
 Release builds are made by tagging: `.github/workflows/release.yml` bundles both Mac architectures
 and publishes them, and a run can be repeated from the Actions tab for any existing tag.
 
-`bundle` builds in release, writes an `Info.plist`, and copies libmpv **with its entire dylib
-closure** — Homebrew's libmpv alone links against sixty-odd libraries — into `Contents/Frameworks`,
-rewriting every install name to `@rpath/…` and re-signing ad hoc. The result runs on a machine that
-has never had Homebrew installed. Windows and Linux packaging is not written yet; the app builds and
-runs there against a system or vendored libmpv.
+`bundle` builds in release and assembles whatever the platform ships: on macOS a `DRTV.app` with
+libmpv **and its entire dylib closure** in `Contents/Frameworks` (Homebrew's libmpv alone links
+against sixty-odd libraries), every install name rewritten to `@rpath/…` and the bundle re-signed
+inside out; on Linux `target/drtv-desktop-linux/`, the binary plus libmpv's closure in `lib/`, joined
+by an `$ORIGIN` rpath; on Windows `target/drtv-desktop-windows/`, the exe with `libmpv-2.dll` beside
+it.
+
+The libraries the operating system owns are deliberately left out on every platform: glibc and the
+loader, the graphics drivers, and the display server's client libraries on Linux — a bundled one of
+those cannot work on a machine that is not the build machine. The Linux bundler asks every object it
+ships what it declares in `DT_NEEDED` and refuses to finish if an answer is in neither `lib/` nor the
+host.
 
 ## Where it remembers you
 

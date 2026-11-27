@@ -78,8 +78,152 @@ jobs:
             ${{ env.NAME }}.zip.sha256
           if-no-files-found: error
 
+  Linux:
+    name: Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: libmpv, patchelf, and a virtual display to open a window on
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libmpv-dev libasound2-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev \
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev libgl1-mesa-dev libgl1-mesa-dri \
+            patchelf xvfb
+
+      - name: Bundle
+        run: cargo xtask bundle
+
+      # The tarball has to run for somebody who does not have this checkout or this Homebrew, so it
+      # is unpacked and started here the way a user starts it, on a display that is not ours either.
+      - name: It opens a window and stays open
+        run: |
+          set -eux
+          cd target/drtv-desktop-linux
+          log="$RUNNER_TEMP/app.log"
+          xvfb-run -a --server-args="-screen 0 1440x900x24" ./drtv-desktop > "$log" 2>&1 &
+          pid=$!
+          sleep 15
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "the app is not running; it said:" >&2
+            cat "$log" >&2
+            exit 1
+          fi
+          kill "$pid"
+          # A window that opened is a window that logged nothing worse than a warning.
+          ! grep -qiE 'panicked|could not be loaded|error while loading' "$log"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          name="DRTV-${tag#v}-linux-x86_64"
+          tar -C target -czf "$name.tar.gz" drtv-desktop-linux
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          du -sh "$name.tar.gz"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.tar.gz
+            ${{ env.NAME }}.tar.gz.sha256
+          if-no-files-found: error
+
+  Windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `lib.exe` and `dumpbin` are not on the runner's PATH, and both are needed to turn a DLL into
+      # something the MSVC linker will accept.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: libmpv for MSVC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup component add llvm-tools-preview
+
+          # The development archive ships a MinGW import library and the DLL; `libmpv2-sys` asks the
+          # MSVC linker for `mpv`, so the import library is made from the DLL's own export table.
+          $release = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' `
+            -Headers @{ 'User-Agent' = 'drtv-desktop-ci' }
+          $asset = $release.assets |
+            Where-Object { $_.name -like 'mpv-dev-x86_64-2*.7z' } |
+            Select-Object -First 1
+          if (-not $asset) { throw 'no mpv-dev-x86_64 archive in the latest mpv build' }
+          Invoke-WebRequest $asset.browser_download_url -OutFile mpv-dev.7z
+          7z x -y mpv-dev.7z -ompv | Out-Null
+
+          $readobj = Join-Path (rustc --print sysroot) 'lib\rustlib\x86_64-pc-windows-msvc\bin\llvm-readobj.exe'
+          $exports = & $readobj --coff-exports mpv\libmpv-2.dll |
+            Select-String -Pattern '^\s+Name:\s+(\S+)\s*$' |
+            ForEach-Object { '  ' + $_.Matches[0].Groups[1].Value }
+          if ($exports.Count -lt 100) { throw "only $($exports.Count) exports in libmpv-2.dll" }
+          @('LIBRARY libmpv-2.dll', 'EXPORTS') + $exports | Set-Content mpv\mpv.def -Encoding ascii
+          lib /nologo /def:mpv\mpv.def /machine:x64 /out:mpv\mpv.lib
+          if (-not (Test-Path mpv\mpv.lib)) { throw 'lib.exe produced no import library' }
+          "DRTV_MPV_LIB_DIR=$PWD\mpv" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Bundle
+        run: cargo xtask bundle
+
+            # Everything the exe imports has to be either beside it or part of Windows itself.
+      - name: The exe brings its own libmpv
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = 'target\drtv-desktop-windows'
+          $readobj = Join-Path (rustc --print sysroot) 'lib\rustlib\x86_64-pc-windows-msvc\bin\llvm-readobj.exe'
+          $needed = & $readobj --coff-imports (Join-Path $dir 'drtv-desktop.exe') |
+            Select-String -Pattern '^\s+Name:\s+(\S+)\s*$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value }
+          if ($needed -notcontains 'libmpv-2.dll') { throw 'the exe does not import libmpv-2.dll' }
+          $missing = $needed | Where-Object {
+            -not (Test-Path (Join-Path $dir $_)) -and
+            -not (Test-Path (Join-Path $env:SystemRoot "System32\$_"))
+          }
+          if ($missing) { throw "not bundled and not part of Windows: $($missing -join ', ')" }
+          "imports: $($needed -join ', ')"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = '${{ inputs.tag || github.ref_name }}'
+          $name = "DRTV-$($tag -replace '^v','')-windows-x86_64"
+          Compress-Archive -Path 'target\drtv-desktop-windows' -DestinationPath "$name.zip"
+          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" |
+            Set-Content "$name.zip.sha256" -Encoding ascii
+          "NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.zip
+            ${{ env.NAME }}.zip.sha256
+          if-no-files-found: error
+
   release:
-    needs: macOS
+    needs: [macOS, Linux, Windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
