@@ -1,5 +1,7 @@
 # DRTV desktop
 
+[![CI](https://github.com/LovelessCodes/drtv-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/LovelessCodes/drtv-desktop/actions/workflows/ci.yml)
+
 A native desktop client for DRTV — DR's streaming service — for macOS, Linux and Windows, written
 in Rust with `egui` and `libmpv`.
 
@@ -11,6 +13,24 @@ gets out of the way.
 logos, artwork or trademarks of its own. Everything you watch comes from DR's own service under
 DR's own terms; if you are not in Denmark, most of the catalogue will not be available to you,
 because that is DR's decision, not this app's.
+
+## Installing
+
+Download the `.zip` for your Mac from [the latest release][release], unzip it, and move `DRTV.app`
+wherever you keep applications. The bundle carries libmpv and everything libmpv links against, so it
+runs on a Mac that has never had Homebrew on it.
+
+It is ad-hoc signed rather than notarised — there is no Apple developer account behind this — so the
+first launch needs **System Settings → Privacy & Security → Open Anyway**, or:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/DRTV.app
+```
+
+Linux and Windows build and run from source (see [Building](#building)) but have no packaged download
+yet. Their CI checks compile; the packaging for both is the next piece of work.
+
+[release]: https://github.com/LovelessCodes/drtv-desktop/releases/latest
 
 ## What it does
 
@@ -33,7 +53,7 @@ because that is DR's decision, not this app's.
 
 ## Building
 
-You need Rust 1.95 or newer and a system libmpv.
+Instead of a download, or for Linux and Windows: you need Rust 1.95 or newer and a system libmpv.
 
 ```sh
 # macOS
@@ -64,6 +84,9 @@ it cannot find one it warns and the binary will fail to start.
 cargo xtask bundle   # → target/DRTV.app
 cargo xtask icon     # → assets/icon/ (PNG sizes, plus AppIcon.icns on macOS)
 ```
+
+Release builds are made by tagging: `.github/workflows/release.yml` bundles both Mac architectures
+and publishes them, and a run can be repeated from the Actions tab for any existing tag.
 
 `bundle` builds in release, writes an `Info.plist`, and copies libmpv **with its entire dylib
 closure** — Homebrew's libmpv alone links against sixty-odd libraries — into `Contents/Frameworks`,

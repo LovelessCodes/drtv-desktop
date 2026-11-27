@@ -73,6 +73,9 @@ fn platform_dir() -> Option<PathBuf> {
     Some(home()?.join(".local/share/drtv-desktop"))
 }
 
+// macOS and the XDG branch both build their directory from a home; Windows has `APPDATA`, so there
+// this is dead code that clippy would rightly refuse.
+#[cfg(not(target_os = "windows"))]
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))

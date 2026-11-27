@@ -13,4 +13,3 @@ egui.workspace = true
 glow.workspace = true
 libmpv2.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
