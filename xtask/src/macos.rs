@@ -62,6 +62,14 @@ pub fn bundle(root: &Path) -> Result<(), String> {
     run(Command::new("install_name_tool")
         .args(["-add_rpath", "@executable_path/../Frameworks"])
         .arg(&executable))?;
+    // The build leaves the rpath it linked against, which is this machine's Homebrew prefix. It is
+    // harmless — a missing rpath entry is skipped — but it is a path that exists on exactly one
+    // computer, in a bundle meant for everyone else.
+    for rpath in rpaths(&executable)? {
+        if !rpath.starts_with("@executable_path") {
+            run(Command::new("install_name_tool").args(["-delete_rpath", &rpath]).arg(&executable))?;
+        }
+    }
 
     // Ad hoc, but a signature nonetheless: an arm64 dylib without one is not loaded at all.
     run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&executable))?;
@@ -104,6 +112,12 @@ fn write_plist(path: &Path) -> Result<(), String> {
 }
 
 fn copy_into(from: &Path, to: &Path) -> Result<(), String> {
+    // A library copied on an earlier run keeps its source's read-only mode, and copying over it
+    // fails with `Permission denied` — which reads like a permissions problem with Homebrew and is
+    // really just a bundle that has been built before.
+    if to.exists() {
+        let _ = std::fs::remove_file(to);
+    }
     std::fs::copy(from, to)
         .map(|_| ())
         .map_err(|e| format!("{} → {}: {e}", from.display(), to.display()))
@@ -120,20 +134,39 @@ fn collect(root: &Path) -> Result<BTreeMap<String, PathBuf>, String> {
     let mut seen = BTreeSet::new();
     while let Some(file) = queue.pop() {
         for dep in dependencies(&file)? {
-            if is_system(&dep) {
+            let Some(path) = resolve(&file, &dep) else {
+                continue;
+            };
+            if is_system(&path) {
                 continue;
             }
-            let Some(name) = dep.file_name().and_then(|n| n.to_str()) else {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
             if !seen.insert(name.to_string()) {
                 continue;
             }
-            found.insert(name.to_string(), dep.clone());
-            queue.push(dep);
+            found.insert(name.to_string(), path.clone());
+            queue.push(path);
         }
     }
     Ok(found)
+}
+
+/// Where a dependency actually lives.
+///
+/// Homebrew links most things by absolute path, but not everything: brotli's decoder asks for
+/// `@rpath/libbrotlicommon.1.dylib`, so a walk that only follows absolute paths ships half a
+/// library and an app that dies in dyld on somebody else's machine. A relative reference is
+/// resolved beside the file that makes it, which is where Homebrew keeps it and where the loader
+/// looks first.
+fn resolve(from: &Path, dep: &Path) -> Option<PathBuf> {
+    if dep.is_absolute() {
+        return Some(dep.to_path_buf());
+    }
+    let name = dep.file_name()?;
+    let beside = from.parent()?.join(name);
+    beside.exists().then_some(beside)
 }
 
 /// `otool -L` output, minus the header line and the compatibility notes.
@@ -151,8 +184,25 @@ fn dependencies(file: &Path) -> Result<Vec<PathBuf>, String> {
         .lines()
         .skip(1)
         .filter_map(|line| line.split_whitespace().next())
-        .filter(|path| path.starts_with('/'))
+        .filter(|path| path.starts_with('/') || path.starts_with('@'))
         .map(PathBuf::from)
+        .collect())
+}
+
+/// The `LC_RPATH` entries a Mach-O carries.
+fn rpaths(file: &Path) -> Result<Vec<String>, String> {
+    let out = Command::new("otool")
+        .args(["-l"])
+        .arg(file)
+        .output()
+        .map_err(|e| format!("otool: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    // `paths` is the `path …` line under each `cmd LC_RPATH` block; matching the line itself is
+    // simpler than counting the fields in between.
+    Ok(text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("path "))
+        .map(|value| value.split(" (offset").next().unwrap_or(value).trim().to_string())
         .collect())
 }
 
