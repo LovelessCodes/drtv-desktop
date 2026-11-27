@@ -6,12 +6,14 @@
 
 use drtv_api::card::Card;
 use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, Rect, Response, RichText, Sense, Stroke, Ui, Vec2,
-    pos2, vec2,
+    Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Response, RichText, Sense, Stroke, Ui,
+    Vec2, pos2, vec2,
 };
 
 use crate::icons::{self, Icon};
-use crate::theme::{self, ACCENT, BORDER, RADIUS, SURFACE, SURFACE_HI, TEXT, TEXT_DIM, TEXT_FAINT};
+use crate::theme::{
+    self, ACCENT, BG, BORDER, RADIUS, SURFACE, SURFACE_HI, TEXT, TEXT_DIM, TEXT_FAINT,
+};
 
 /// How a screen finds the decoded art for a URL. Returning a cloned handle keeps the signature free
 /// of the cache's lifetime; a handle is an `Arc` clone.
@@ -206,8 +208,13 @@ fn tooltip(ui: &mut Ui, card: &Card) {
     }
 }
 
-/// One shelf: a heading and a horizontal run of tiles. The run scrolls with the wheel and with a
-/// drag, which is what a mouse-driven shelf wants; a scrollbar would eat a row of art.
+/// One shelf: a heading and a horizontal run of tiles.
+///
+/// The run takes the wheel only with a modifier, and never instead of the page: a shelf that eats
+/// the wheel is a page that stops scrolling whenever the pointer happens to be over a tile. What
+/// moves it is a drag, or the arrow that appears at the edge when there is more to the right — and
+/// that arrow only appears on a row the pointer is already on, so 24 items behind six visible ones
+/// are reachable without knowing a gesture.
 pub fn shelf(
     ui: &mut Ui,
     shelf: &drtv_api::card::Shelf,
@@ -224,9 +231,20 @@ pub fn shelf(
         ui.label(RichText::new(&shelf.title).font(theme::semibold(20.0)).color(TEXT));
         ui.add_space(6.0);
     }
-    egui::ScrollArea::horizontal()
-        .id_salt(("shelf", &shelf.id))
+
+    let id = egui::Id::unique(egui::IdSalt::new(&shelf.id));
+    // The offset we asked for is the offset a drag left behind: pass it back in, so the wheel and
+    // the arrows do not fight over who owns the row.
+    let offset = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
+    let out = egui::ScrollArea::horizontal()
+        .id_salt(id)
+        .horizontal_scroll_offset(offset)
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .scroll_source(egui::scroll_area::ScrollSource {
+            scroll_bar: false,
+            drag: egui::scroll_area::DragScroll::Always,
+            mouse_wheel: false,
+        })
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
@@ -237,7 +255,53 @@ pub fn shelf(
                 }
             });
         });
+
+    let view = out.inner_rect;
+    let over = out.content_size.x > view.width() + 1.0;
+    let mut offset = out.state.clamped_offset().x;
+    if over {
+        // Not `ui.interact(...).hovered()`: a poster under the pointer senses clicks and so wins
+        // the hover, and the arrow would never be drawn at all. The row is hovered when the
+        // pointer is on it, whoever else lives there.
+        if ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| view.contains(p)) {
+            let step = (view.width() * 0.8).max(width * 2.0);
+            // Centre on the art, not on art plus caption: a chevron floating under the posters
+            // reads as belonging to the row below.
+            let centre = pos2(view.center().x, view.top() + width * 0.75);
+            let left = pos2(view.left() + 24.0, centre.y);
+            if offset > 1.0 && arrow(ui, id.with("prev"), left, Icon::ChevronLeft) {
+                offset = (offset - step).max(0.0);
+            }
+            let right = offset + view.width() < out.content_size.x - 1.0;
+            let right_at = pos2(view.right() - 24.0, centre.y);
+            if right && arrow(ui, id.with("next"), right_at, Icon::ChevronRight) {
+                offset = (offset + step).min(out.content_size.x - view.width());
+            }
+            // A soft edge, so the row reads as continuing rather than as cut off mid-poster.
+            let edge = Rect::from_min_max(
+                pos2(view.right() - 56.0, view.top()),
+                pos2(view.right(), view.top() + width * 1.5 + 4.0),
+            );
+            gradient(ui, edge, Color32::TRANSPARENT, BG);
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(id, offset));
+
     ui.add_space(14.0);
+}
+
+/// A round chevron over the edge of a shelf. Returns whether it was clicked this frame.
+fn arrow(ui: &mut Ui, id: egui::Id, centre: Pos2, icon: Icon) -> bool {
+    let rect = Rect::from_center_size(centre, Vec2::splat(44.0));
+    let response = ui.interact(rect, id, Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+    let disc = Rect::from_center_size(centre, Vec2::splat(34.0));
+    ui.painter().circle_filled(
+        disc.center(),
+        disc.width() * 0.5,
+        if response.hovered() { BG.gamma_multiply(0.92) } else { BG.gamma_multiply(0.62) },
+    );
+    icons::paint(ui.painter(), disc.shrink(9.0), icon, TEXT);
+    response.clicked()
 }
 
 /// A selectable chip: the season bar, the search filters.
