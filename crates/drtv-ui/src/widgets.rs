@@ -257,32 +257,58 @@ pub fn shelf(
         });
 
     let view = out.inner_rect;
-    let over = out.content_size.x > view.width() + 1.0;
+    // A horizontal `ScrollArea` reports an `inner_rect` of no height: its height is the content's,
+    // and the content's height is not what `inner_rect` was built from. Taking the row's height
+    // from `content_size` is what makes it a rectangle the pointer can be inside at all.
+    let row = Rect::from_min_size(view.min, vec2(view.width(), out.content_size.y));
+    let over = out.content_size.x > row.width() + 1.0;
+    let max_offset = (out.content_size.x - row.width()).max(0.0);
     let mut offset = out.state.clamped_offset().x;
+    // Not `ui.interact(...).hovered()`: a poster under the pointer senses clicks and so wins the
+    // hover, and the row would never see it. The row is hovered when the pointer is on it, whoever
+    // else lives there.
+    let hovered = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| row.contains(p));
     if over {
-        // Not `ui.interact(...).hovered()`: a poster under the pointer senses clicks and so wins
-        // the hover, and the arrow would never be drawn at all. The row is hovered when the
-        // pointer is on it, whoever else lives there.
-        if ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| view.contains(p)) {
-            let step = (view.width() * 0.8).max(width * 2.0);
-            // Centre on the art, not on art plus caption: a chevron floating under the posters
-            // reads as belonging to the row below.
-            let centre = pos2(view.center().x, view.top() + width * 0.75);
-            let left = pos2(view.left() + 24.0, centre.y);
-            if offset > 1.0 && arrow(ui, id.with("prev"), left, Icon::ChevronLeft) {
+        // A trackpad's sideways gesture, or the wheel with shift held: the row's, not the page's.
+        // Taking the delta here is what keeps the page still under a gesture aimed at this row, and
+        // doing it first is what lets the edges and chevrons below describe where the row now is.
+        if hovered {
+            offset = (offset + sideways_wheel(ui)).clamp(0.0, max_offset);
+        }
+        // A soft edge on whichever side the row continues, so a poster cut off by the window reads
+        // as "more this way" rather than as a mistake.
+        let soft =
+            |x: (f32, f32)| Rect::from_min_max(pos2(x.0, row.top()), pos2(x.1, row.bottom()));
+        gradient(ui, soft((row.right() - 56.0, row.right())), Color32::TRANSPARENT, BG);
+        if offset > 1.0 {
+            gradient(ui, soft((row.left(), row.left() + 56.0)), BG, Color32::TRANSPARENT);
+        }
+        // Chevrons last, over the fade, only while the pointer is on the row and only on a side
+        // that still has posters past it. Centred on the art, not on art plus caption: a chevron
+        // floating under the posters reads as belonging to the row below.
+        if hovered {
+            let centre_y = row.top() + width * 0.75;
+            let step = (row.width() * 0.8).max(width * 2.0);
+            if offset > 1.0
+                && chevron(
+                    ui,
+                    id.with("prev"),
+                    pos2(row.left() + 20.0, centre_y),
+                    Icon::ChevronLeft,
+                )
+            {
                 offset = (offset - step).max(0.0);
             }
-            let right = offset + view.width() < out.content_size.x - 1.0;
-            let right_at = pos2(view.right() - 24.0, centre.y);
-            if right && arrow(ui, id.with("next"), right_at, Icon::ChevronRight) {
-                offset = (offset + step).min(out.content_size.x - view.width());
+            if offset + row.width() < out.content_size.x - 1.0
+                && chevron(
+                    ui,
+                    id.with("next"),
+                    pos2(row.right() - 20.0, centre_y),
+                    Icon::ChevronRight,
+                )
+            {
+                offset = (offset + step).min(max_offset);
             }
-            // A soft edge, so the row reads as continuing rather than as cut off mid-poster.
-            let edge = Rect::from_min_max(
-                pos2(view.right() - 56.0, view.top()),
-                pos2(view.right(), view.top() + width * 1.5 + 4.0),
-            );
-            gradient(ui, edge, Color32::TRANSPARENT, BG);
         }
     }
     ui.data_mut(|d| d.insert_temp(id, offset));
@@ -290,17 +316,44 @@ pub fn shelf(
     ui.add_space(14.0);
 }
 
-/// A round chevron over the edge of a shelf. Returns whether it was clicked this frame.
-fn arrow(ui: &mut Ui, id: egui::Id, centre: Pos2, icon: Icon) -> bool {
+/// The row's share of this frame's wheel input, in the offset's own direction. A trackpad's
+/// sideways gesture arrives on `x`; shift turns a plain wheel into one, which winit leaves on `y`.
+fn sideways_wheel(ui: &Ui) -> f32 {
+    let (delta, shift) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers.shift));
+    let horizontal = delta.x.abs() > 0.01;
+    let (taken, vertical) = match (horizontal, shift) {
+        (true, _) => (delta.x, false),
+        (false, true) => (delta.y, true),
+        (false, false) => return 0.0,
+    };
+    ui.input_mut(|i| {
+        if vertical {
+            i.smooth_scroll_delta.y = 0.0;
+        } else {
+            i.smooth_scroll_delta.x = 0.0;
+        }
+    });
+    // Offsets run opposite to deltas, exactly as they do inside `ScrollArea`.
+    -taken
+}
+
+/// A bare chevron over the edge of a shelf, on a side that still has posters past it. Returns
+/// whether it was clicked this frame.
+///
+/// No disc under it: the row already moves under the wheel and under a drag, so this is a hint
+/// about which way there is more rather than a button that has to be pressed to see the row.
+fn chevron(ui: &mut Ui, id: egui::Id, centre: Pos2, icon: Icon) -> bool {
     let rect = Rect::from_center_size(centre, Vec2::splat(44.0));
     let response = ui.interact(rect, id, Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
-    let disc = Rect::from_center_size(centre, Vec2::splat(34.0));
-    ui.painter().circle_filled(
-        disc.center(),
-        disc.width() * 0.5,
-        if response.hovered() { BG.gamma_multiply(0.92) } else { BG.gamma_multiply(0.62) },
-    );
-    icons::paint(ui.painter(), disc.shrink(9.0), icon, TEXT);
+    let mark = Rect::from_center_size(centre, Vec2::splat(20.0));
+    // A dark pass one pixel out under the stroke, because the art behind it is whatever DR sent:
+    // a white chevron over a white poster is a chevron nobody finds.
+    let shade = Color32::from_black_alpha(150);
+    for offset in [vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0)] {
+        icons::paint(ui.painter(), mark.translate(offset), icon, shade);
+    }
+    let alpha = if response.hovered() { 1.0 } else { 0.82 };
+    icons::paint(ui.painter(), mark, icon, TEXT.gamma_multiply(alpha));
     response.clicked()
 }
 
