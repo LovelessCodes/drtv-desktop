@@ -155,8 +155,12 @@ mod tests {
             let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
             out.push(T[(n >> 18) as usize & 63] as char);
             out.push(T[(n >> 12) as usize & 63] as char);
-            if chunk.len() > 1 { out.push(T[(n >> 6) as usize & 63] as char); }
-            if chunk.len() > 2 { out.push(T[n as usize & 63] as char); }
+            if chunk.len() > 1 {
+                out.push(T[(n >> 6) as usize & 63] as char);
+            }
+            if chunk.len() > 2 {
+                out.push(T[n as usize & 63] as char);
+            }
         }
         out
     }
@@ -174,8 +178,10 @@ mod tests {
 
     #[test]
     fn exchange_picks_the_catalog_pair() {
-        let account = jwt(r#"{"sub":"Catalog","sid":"SID-1","userAccountId":"ACC","exp":1792700000}"#);
-        let profile = jwt(r#"{"sub":"Catalog","sid":"SID-1","userProfileId":"PROF","exp":1792700000}"#);
+        let account =
+            jwt(r#"{"sub":"Catalog","sid":"SID-1","userAccountId":"ACC","exp":1792700000}"#);
+        let profile =
+            jwt(r#"{"sub":"Catalog","sid":"SID-1","userProfileId":"PROF","exp":1792700000}"#);
         let commerce = jwt(r#"{"sub":"Commerce","sid":"SID-1","exp":1792700000}"#);
         let json = format!(
             r#"[{{"Token":"{commerce}","TokenType":"UserAccount"}},
@@ -197,7 +203,8 @@ mod tests {
     fn the_seat_envelope_spells_the_same_two_things_differently() {
         // `POST /authorization/profile` answers `[{value, type, expirationDate, refreshable}]`.
         // Read only the exchange spelling and a seat that DR accepted still parses to nothing.
-        let profile = jwt(r#"{"sub":"Catalog","sid":"SID-2","userProfileId":"PROF","exp":1792700000}"#);
+        let profile =
+            jwt(r#"{"sub":"Catalog","sid":"SID-2","userProfileId":"PROF","exp":1792700000}"#);
         let json = format!(
             r#"[{{"value":"{profile}","type":"UserProfile","refreshable":true,
                  "expirationDate":"2026-11-06T22:00:00Z"}}]"#

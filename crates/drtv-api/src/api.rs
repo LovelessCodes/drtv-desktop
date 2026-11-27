@@ -15,8 +15,7 @@ pub fn api_base() -> String {
 /// The value of `device` the API expects from a webOS client; anything else returns
 /// "Item was not found" rather than a stream list.
 pub const DEVICE: &str = "tv_lg_webos";
-const UA: &str =
-    "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36";
+const UA: &str = "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36";
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Images {
@@ -255,7 +254,9 @@ fn percent_encode_path(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -316,11 +317,7 @@ pub fn lists(ids: &[String], universe: &crate::auth::Universe) -> Vec<List> {
     if ids.is_empty() {
         return Vec::new();
     }
-    let ids = ids
-        .iter()
-        .map(|id| format!("{id}%7Cpage_size%3D24"))
-        .collect::<Vec<_>>()
-        .join("%2C");
+    let ids = ids.iter().map(|id| format!("{id}%7Cpage_size%3D24")).collect::<Vec<_>>().join("%2C");
     let url = format!("{}/lists?{}&ids={ids}", tv_api_base(), tv_params(universe));
     match get_url(&url).and_then(|body| serde_json::from_str(&body).ok()) {
         Some(lists) => lists,
@@ -393,9 +390,7 @@ fn account_list(profile_token: &str, path: &str) -> Vec<Item> {
     if !resp.ok() {
         return Vec::new();
     }
-    serde_json::from_slice::<AccountList>(&resp.body)
-        .map(|list| list.items)
-        .unwrap_or_default()
+    serde_json::from_slice::<AccountList>(&resp.body).map(|list| list.items).unwrap_or_default()
 }
 
 /// "Se videre" — what the profile has started and not finished, most recent first.
@@ -598,11 +593,7 @@ pub fn subtitle_label(marker: &str) -> String {
         .or_else(|| marker.strip_suffix("Subtitles"))
         .unwrap_or(marker)
         .trim();
-    if trimmed.is_empty() {
-        "Subtitles".to_string()
-    } else {
-        trimmed.to_string()
-    }
+    if trimmed.is_empty() { "Subtitles".to_string() } else { trimmed.to_string() }
 }
 
 /// The `position` to WRITE while playing, from the player's own numbers.
@@ -630,17 +621,17 @@ pub fn progress_position(time_ms: i64, duration_ms: i64) -> i64 {
 /// There is no "0" arm: un-watching is not a position at all ([`clear_watched`]), which is the
 /// distinction this function's old `on` flag got wrong.
 pub fn watched_position(item: &Item) -> i64 {
-    if item.duration > 0 {
-        item.duration
-    } else {
-        60_000
-    }
+    if item.duration > 0 { item.duration } else { 60_000 }
 }
 
-pub fn schedules(channel: &str, date: &str, hour: u32, duration: u32) -> Option<Vec<ChannelSchedule>> {
-    let body = get(&format!(
-        "/schedules?channels={channel}&date={date}&hour={hour}&duration={duration}"
-    ))?;
+pub fn schedules(
+    channel: &str,
+    date: &str,
+    hour: u32,
+    duration: u32,
+) -> Option<Vec<ChannelSchedule>> {
+    let body =
+        get(&format!("/schedules?channels={channel}&date={date}&hour={hour}&duration={duration}"))?;
     serde_json::from_str(&body).ok()
 }
 
@@ -701,7 +692,11 @@ pub struct SearchReply {
 ///
 /// A signed-out search answers in full: the endpoint treats the term as public catalogue, so the
 /// desktop simulator can search with no DR session at all.
-pub fn search(term: &str, profile_token: &str, universe: &crate::auth::Universe) -> Option<SearchReply> {
+pub fn search(
+    term: &str,
+    profile_token: &str,
+    universe: &crate::auth::Universe,
+) -> Option<SearchReply> {
     let mut headers = vec![
         format!("User-Agent: {UA}"),
         "Origin: https://www.dr.dk".to_string(),
@@ -712,7 +707,8 @@ pub fn search(term: &str, profile_token: &str, universe: &crate::auth::Universe)
     if !profile_token.is_empty() {
         headers.push(format!("Authorization: Bearer {profile_token}"));
     }
-    let resp = drtv_net::get(&search_url(term, profile_token.is_empty(), universe), &headers).ok()?;
+    let resp =
+        drtv_net::get(&search_url(term, profile_token.is_empty(), universe), &headers).ok()?;
     if !resp.ok() {
         return None;
     }
@@ -762,14 +758,7 @@ fn session_id() -> &'static str {
         bytes[6] = (bytes[6] & 0x0f) | 0x40;
         bytes[8] = (bytes[8] & 0x3f) | 0x80;
         let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        format!(
-            "{}-{}-{}-{}-{}",
-            &hex[0..8],
-            &hex[8..12],
-            &hex[12..16],
-            &hex[16..20],
-            &hex[20..32]
-        )
+        format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32])
     })
 }
 
@@ -798,7 +787,10 @@ mod tests {
         let kid = crate::auth::Universe::of(&["minisjang".to_string(), "optedout".to_string()]);
         let ours = search_url("bluey", true, &kid);
         assert!(ours.contains("&segments=minisjang%2Coptedout"), "{ours}");
-        assert!(!ours.contains("drtv"), "the adult catalogue is not search's default any more: {ours}");
+        assert!(
+            !ours.contains("drtv"),
+            "the adult catalogue is not search's default any more: {ours}"
+        );
         assert!(ours.contains("&sub=Anonymous2"), "a signed-out search says so: {ours}");
         let adult = search_url("bluey", false, &crate::auth::Universe::general());
         assert!(adult.contains("&segments=drtv%2Coptedout"), "{adult}");
@@ -932,21 +924,39 @@ mod tests {
     /// rendition is just another candidate at the same resolution.
     #[test]
     fn the_standard_rendition_beats_the_described_one_at_equal_resolution() {
-        let standard = File { url: "s.m3u8".into(), resolution: "HD-1080".into(),
-            access_service: "StandardVideo".into(), ..Default::default() };
+        let standard = File {
+            url: "s.m3u8".into(),
+            resolution: "HD-1080".into(),
+            access_service: "StandardVideo".into(),
+            ..Default::default()
+        };
         for marker in ["SpokenSubtitles", "AudioDescription"] {
-            let described = File { url: "d.m3u8".into(), resolution: "HD-1080".into(),
-                access_service: marker.into(), ..Default::default() };
-            for files in [vec![described.clone(), standard.clone()], vec![standard.clone(), described.clone()]] {
-                assert_eq!(stream_file(&files).map(|f| f.url.as_str()), Some("s.m3u8"),
-                    "the {marker} cut is not the file a sighted viewer asked for");
+            let described = File {
+                url: "d.m3u8".into(),
+                resolution: "HD-1080".into(),
+                access_service: marker.into(),
+                ..Default::default()
+            };
+            for files in [
+                vec![described.clone(), standard.clone()],
+                vec![standard.clone(), described.clone()],
+            ] {
+                assert_eq!(
+                    stream_file(&files).map(|f| f.url.as_str()),
+                    Some("s.m3u8"),
+                    "the {marker} cut is not the file a sighted viewer asked for"
+                );
             }
             // …but the described cut is still a stream: a title that ships only that one must play
             // rather than fail, so the preference is a tiebreak and never a filter.
             assert!(stream_file(&[described]).is_some(), "{marker} alone is still playable");
         }
-        let drm = File { url: "x.m3u8".into(), resolution: "HD-4K".into(),
-            drm: "PlayReady".into(), ..Default::default() };
+        let drm = File {
+            url: "x.m3u8".into(),
+            resolution: "HD-4K".into(),
+            drm: "PlayReady".into(),
+            ..Default::default()
+        };
         assert_eq!(stream_file(&[drm]).map(|f| f.url.as_str()), None, "a DRM'd file cannot play");
         assert!(stream_file(&[]).is_none());
     }
@@ -987,10 +997,18 @@ mod tests {
     /// and it must beat the 1080p file without depending on list order.
     #[test]
     fn the_uhd_rendition_beats_the_hd_one() {
-        let uhd = File { url: "u.m3u8".into(), resolution: "HD-4K".into(),
-            access_service: "StandardVideo".into(), ..Default::default() };
-        let hd = File { url: "h.m3u8".into(), resolution: "HD-1080".into(),
-            access_service: "StandardVideo".into(), ..Default::default() };
+        let uhd = File {
+            url: "u.m3u8".into(),
+            resolution: "HD-4K".into(),
+            access_service: "StandardVideo".into(),
+            ..Default::default()
+        };
+        let hd = File {
+            url: "h.m3u8".into(),
+            resolution: "HD-1080".into(),
+            access_service: "StandardVideo".into(),
+            ..Default::default()
+        };
         for files in [vec![uhd.clone(), hd.clone()], vec![hd, uhd]] {
             assert_eq!(stream_file(&files).map(|f| f.url.as_str()), Some("u.m3u8"));
         }
@@ -1008,7 +1026,10 @@ mod tests {
             "{API}/account/profile/watched?device={DEVICE}&item_ids={}",
             ["622937"].join("%2C")
         );
-        assert!(url.ends_with("/account/profile/watched?device=tv_lg_webos&item_ids=622937"), "{url}");
+        assert!(
+            url.ends_with("/account/profile/watched?device=tv_lg_webos&item_ids=622937"),
+            "{url}"
+        );
         assert!(!url.contains("/watched/622937"), "the ITEM-scoped delete is the 405");
     }
 
@@ -1044,10 +1065,7 @@ mod tests {
         let fields: Vec<usize> = a.split('-').map(str::len).collect();
         assert_eq!(fields, vec![8, 4, 4, 4, 12], "uuid v4 field lengths: {a}");
         assert_eq!(&a[14..15], "4", "version nibble: {a}");
-        assert!(
-            matches!(&a[19..20], "8" | "9" | "a" | "b"),
-            "variant nibble: {a}"
-        );
+        assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"), "variant nibble: {a}");
         assert!(a.chars().all(|c| c == '-' || c.is_ascii_hexdigit()), "{a}");
     }
 }

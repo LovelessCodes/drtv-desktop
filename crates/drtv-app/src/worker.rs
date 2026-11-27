@@ -50,45 +50,24 @@ pub enum Cmd {
     SignOut,
     /// Write playback progress, in SECONDS. A position at or past the item's length is what makes
     /// DR mark it watched; there is no separate "mark watched" call.
-    Progress { item_id: String, position: i64 },
+    Progress {
+        item_id: String,
+        position: i64,
+    },
 }
 
 /// What a thread sends back.
 #[derive(Debug)]
 pub enum Msg {
-    Home {
-        generation: u64,
-        result: Result<Vec<card::Shelf>, String>,
-    },
-    Detail {
-        generation: u64,
-        result: Result<card::Detail, String>,
-    },
-    Search {
-        generation: u64,
-        result: Result<Vec<card::Shelf>, String>,
-    },
-    Stream {
-        generation: u64,
-        result: Result<Stream, String>,
-    },
-    Image {
-        url: String,
-        result: Result<egui::ColorImage, String>,
-    },
-    SignIn {
-        generation: u64,
-        result: Result<auth::DeviceCode, String>,
-    },
-    SignInPoll {
-        generation: u64,
-        state: PollState,
-    },
+    Home { generation: u64, result: Result<Vec<card::Shelf>, String> },
+    Detail { generation: u64, result: Result<card::Detail, String> },
+    Search { generation: u64, result: Result<Vec<card::Shelf>, String> },
+    Stream { generation: u64, result: Result<Stream, String> },
+    Image { url: String, result: Result<egui::ColorImage, String> },
+    SignIn { generation: u64, result: Result<auth::DeviceCode, String> },
+    SignInPoll { generation: u64, state: PollState },
     Profiles(Result<Vec<auth::Profile>, String>),
-    Seated {
-        generation: u64,
-        result: Result<auth::Stored, String>,
-    },
+    Seated { generation: u64, result: Result<auth::Stored, String> },
     SignedOut,
     Progress(Result<(), i32>),
 }
@@ -133,12 +112,16 @@ impl Workers {
             threads.push(
                 std::thread::Builder::new()
                     .name(format!("drtv-api-{n}"))
-                    .spawn(move || loop {
-                        let Ok(cmd) = rx.lock().expect("api queue").recv() else {
-                            return;
-                        };
-                        let Some(msg) = api_command(cmd) else { continue };
-                        wake(&tx, &ctx, msg);
+                    .spawn(move || {
+                        loop {
+                            let Ok(cmd) = rx.lock().expect("api queue").recv() else {
+                                return;
+                            };
+                            let Some(msg) = api_command(cmd) else {
+                                continue;
+                            };
+                            wake(&tx, &ctx, msg);
+                        }
                     })
                     .expect("spawn api thread"),
             );
@@ -151,24 +134,21 @@ impl Workers {
             threads.push(
                 std::thread::Builder::new()
                     .name(format!("drtv-image-{n}"))
-                    .spawn(move || loop {
-                        let Ok(cmd) = rx.lock().expect("image queue").recv() else {
-                            return;
-                        };
-                        if let Some(msg) = image_command(cmd) {
-                            wake(&tx, &ctx, msg);
+                    .spawn(move || {
+                        loop {
+                            let Ok(cmd) = rx.lock().expect("image queue").recv() else {
+                                return;
+                            };
+                            if let Some(msg) = image_command(cmd) {
+                                wake(&tx, &ctx, msg);
+                            }
                         }
                     })
                     .expect("spawn image thread"),
             );
         }
 
-        Self {
-            api: api_tx,
-            images: image_tx,
-            rx: msg_rx,
-            threads,
-        }
+        Self { api: api_tx, images: image_tx, rx: msg_rx, threads }
     }
 
     pub fn api(&self) -> &Sender<Cmd> {
@@ -237,10 +217,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                 let lists = api::lists(&pending, &universe);
                 card::fill_lists(&mut shelves, &lists, &watches);
             }
-            Some(Msg::Home {
-                generation,
-                result: Ok(shelves),
-            })
+            Some(Msg::Home { generation, result: Ok(shelves) })
         }
 
         Cmd::Detail { id, generation } => {
@@ -252,10 +229,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                     result: Err("Titlen kunne ikke hentes".to_string()),
                 });
             };
-            Some(Msg::Detail {
-                generation,
-                result: Ok(card::detail(&item, &watches)),
-            })
+            Some(Msg::Detail { generation, result: Ok(card::detail(&item, &watches)) })
         }
 
         Cmd::Search { term, generation } => {
@@ -281,21 +255,19 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                 if group.items.is_empty() {
                     continue;
                 }
-                let title = if group.title.is_empty() {
-                    fallback.to_string()
-                } else {
-                    group.title.clone()
-                };
+                // DR sends `"playable"`, `"series"` … — the group's machine key, not a heading. A
+                // key is all lower-case ASCII; a real label ("Populært lige nu") never is.
+                let keyish = group.title.is_empty()
+                    || group.title.chars().all(|c| !c.is_alphabetic() || c.is_lowercase());
+                let title = if keyish { fallback.to_string() } else { group.title.clone() };
                 shelves.push(card::Shelf {
                     id: format!("search-{title}"),
                     title,
                     items: group.items.iter().map(|i| card::card(i, watches.get(&i.id))).collect(),
+                    pending: false,
                 });
             }
-            Some(Msg::Search {
-                generation,
-                result: Ok(shelves),
-            })
+            Some(Msg::Search { generation, result: Ok(shelves) })
         }
 
         Cmd::Stream { id, generation } => {
@@ -312,10 +284,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                 } else {
                     "Ingen afspilningsbar fil i svaret"
                 };
-                return Some(Msg::Stream {
-                    generation,
-                    result: Err(message.to_string()),
-                });
+                return Some(Msg::Stream { generation, result: Err(message.to_string()) });
             };
             Some(Msg::Stream {
                 generation,
@@ -332,30 +301,24 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
             result: auth::start().ok_or_else(|| "DR svarede ikke på login".to_string()),
         }),
 
-        Cmd::PollSignIn {
-            code,
-            interval,
-            generation,
-        } => {
+        Cmd::PollSignIn { code, interval, generation } => {
             std::thread::sleep(std::time::Duration::from_secs(interval.max(1)));
             let state = match auth::poll(&code) {
                 auth::Poll::Pending => PollState::Pending,
                 auth::Poll::SlowDown => PollState::Pending,
                 auth::Poll::Failed(why) => PollState::Failed(why),
-                auth::Poll::Approved {
-                    access,
-                    id,
-                    refresh,
-                } => match auth::exchange(&access, &id, &refresh) {
-                    Some(stored) => {
-                        if auth::save(&stored) {
-                            PollState::Approved
-                        } else {
-                            PollState::Failed("sessionen kunne ikke gemmes".to_string())
+                auth::Poll::Approved { access, id, refresh } => {
+                    match auth::exchange(&access, &id, &refresh) {
+                        Some(stored) => {
+                            if auth::save(&stored) {
+                                PollState::Approved
+                            } else {
+                                PollState::Failed("sessionen kunne ikke gemmes".to_string())
+                            }
                         }
+                        None => PollState::Failed("DR afviste login".to_string()),
                     }
-                    None => PollState::Failed("DR afviste login".to_string()),
-                },
+                }
             };
             Some(Msg::SignInPoll { generation, state })
         }
@@ -364,11 +327,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
             auth::profiles().ok_or_else(|| "Profil-listen kunne ikke hentes".to_string()),
         )),
 
-        Cmd::Seat {
-            id,
-            segments,
-            generation,
-        } => {
+        Cmd::Seat { id, segments, generation } => {
             let result = match auth::select_profile(&id, &segments) {
                 Ok(stored) => Ok(stored),
                 Err(refusal) => Err(refusal.why()),
@@ -385,11 +344,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
             let Some(stored) = session() else {
                 return None;
             };
-            Some(Msg::Progress(api::set_watched(
-                &stored.profile,
-                &item_id,
-                position.max(0),
-            )))
+            Some(Msg::Progress(api::set_watched(&stored.profile, &item_id, position.max(0))))
         }
 
         // Image work is only ever sent on the image queue.
@@ -398,18 +353,10 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
 }
 
 fn image_command(cmd: Cmd) -> Option<Msg> {
-    let Cmd::Image {
-        url,
-        width,
-        height,
-    } = cmd
-    else {
+    let Cmd::Image { url, width, height } = cmd else {
         return None;
     };
-    Some(Msg::Image {
-        result: fetch_image(&url, width, height),
-        url,
-    })
+    Some(Msg::Image { result: fetch_image(&url, width, height), url })
 }
 
 fn fetch_image(url: &str, width: u32, height: u32) -> Result<egui::ColorImage, String> {

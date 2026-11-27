@@ -14,9 +14,5 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
 
-    eframe::run_native(
-        "DRTV",
-        options,
-        Box::new(|cc| Ok(Box::new(drtv_app::DrtvApp::new(cc)))),
-    )
+    eframe::run_native("DRTV", options, Box::new(|cc| Ok(Box::new(drtv_app::DrtvApp::new(cc)))))
 }

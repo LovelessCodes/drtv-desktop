@@ -128,7 +128,10 @@ pub fn request(
     Ok(Resp { status, body })
 }
 
-fn with_headers<T>(mut req: ureq::RequestBuilder<T>, headers: &[String]) -> ureq::RequestBuilder<T> {
+fn with_headers<T>(
+    mut req: ureq::RequestBuilder<T>,
+    headers: &[String],
+) -> ureq::RequestBuilder<T> {
     for line in headers {
         if let Some((name, value)) = line.split_once(':') {
             req = req.header(name.trim(), value.trim());

@@ -48,15 +48,7 @@ impl ImageCache {
         {
             return;
         }
-        if workers
-            .images()
-            .send(Cmd::Image {
-                url: url.to_string(),
-                width,
-                height,
-            })
-            .is_ok()
-        {
+        if workers.images().send(Cmd::Image { url: url.to_string(), width, height }).is_ok() {
             self.started.insert(url.to_string());
         }
     }

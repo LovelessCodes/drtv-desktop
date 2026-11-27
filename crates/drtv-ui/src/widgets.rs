@@ -18,8 +18,9 @@ use crate::theme::{self, ACCENT, BORDER, RADIUS, SURFACE, SURFACE_HI, TEXT, TEXT
 pub type Lookup<'a> = dyn Fn(&str) -> Option<egui::TextureHandle> + 'a;
 
 const POSTER_ASPECT: f32 = 1.5;
-/// Art, then two lines of title and one of kicker.
-const POSTER_TEXT: f32 = 50.0;
+/// Art, then two lines of title and one of kicker. Measured rather than guessed: a two-line Danish
+/// title plus its kicker is 36 + 18 points, and a tile that allows less overlaps the shelf below.
+const POSTER_TEXT: f32 = 62.0;
 
 /// A portrait tile. Returns the response for the whole tile, art and caption.
 pub fn poster(ui: &mut Ui, card: &Card, images: &Lookup<'_>, width: f32) -> Response {
@@ -32,9 +33,7 @@ pub fn poster(ui: &mut Ui, card: &Card, images: &Lookup<'_>, width: f32) -> Resp
     art_box(ui, art, images(url.as_str()), &card.title, card);
     caption(ui, rect, art, card);
 
-    response
-        .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_ui(|ui| tooltip(ui, card))
+    response.on_hover_cursor(CursorIcon::PointingHand).on_hover_ui(|ui| tooltip(ui, card))
 }
 
 /// A landscape tile, sized by width. `width / 1.78` is the art; the caption sits under it.
@@ -48,9 +47,7 @@ pub fn wide(ui: &mut Ui, card: &Card, images: &Lookup<'_>, width: f32) -> Respon
     art_box(ui, art, images(url.as_str()), &card.title, card);
     caption(ui, rect, art, card);
 
-    response
-        .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_ui(|ui| tooltip(ui, card))
+    response.on_hover_cursor(CursorIcon::PointingHand).on_hover_ui(|ui| tooltip(ui, card))
 }
 
 /// The art itself: the image (cover-cropped) or, when there is none yet, a placeholder carrying the
@@ -62,12 +59,10 @@ fn art_box(ui: &Ui, art: Rect, texture: Option<egui::TextureHandle>, title: &str
 
     match texture {
         Some(texture) => {
+            // A raw texture draw, not `egui::Image`: the widget preserves the texture's aspect ratio
+            // and would letterbox inside the tile. The uv rectangle is the crop, so the art fills.
             let uv = cover_uv(texture.size_vec2(), art.size());
-            let sized = egui::load::SizedTexture::new(texture.id(), art.size());
-            egui::Image::new(sized)
-                .uv(uv)
-                .corner_radius(radius)
-                .paint_at(ui, art);
+            painter.image(texture.id(), art, uv, Color32::WHITE);
         }
         None => {
             painter.rect_filled(art, radius, SURFACE_HI);
@@ -109,36 +104,23 @@ fn caption(ui: &Ui, rect: Rect, art: Rect, card: &Card) {
     let title_top = art.bottom() + 8.0;
     let title_width = rect.width();
 
-    let galley = painter.layout(
-        card.title.clone(),
-        theme::semibold(13.5),
-        TEXT,
-        title_width,
-    );
+    let galley = painter.layout(card.title.clone(), theme::semibold(13.5), TEXT, title_width);
     // Two lines at most: the caption has a fixed height, and a third line would overlap the kicker.
-    let clip = Rect::from_min_size(
-        pos2(x, title_top),
-        vec2(title_width, (galley.size().y).min(35.0)),
-    );
-    painter.with_clip_rect(clip).galley(
-        pos2(x, title_top),
-        galley,
-        TEXT,
-    );
+    let clip =
+        Rect::from_min_size(pos2(x, title_top), vec2(title_width, (galley.size().y).min(35.0)));
+    painter.with_clip_rect(clip).galley(pos2(x, title_top), galley, TEXT);
 
     let kicker = kicker_text(card);
     if !kicker.is_empty() {
-        painter.with_clip_rect(Rect::from_min_size(
-            pos2(x, title_top + 36.0),
-            vec2(title_width, 14.0),
-        ))
-        .text(
-            pos2(x, title_top + 35.0),
-            Align2::LEFT_TOP,
-            kicker,
-            theme::regular(11.5),
-            TEXT_DIM,
-        );
+        painter
+            .with_clip_rect(Rect::from_min_size(pos2(x, title_top + 37.0), vec2(title_width, 14.0)))
+            .text(
+                pos2(x, title_top + 36.0),
+                Align2::LEFT_TOP,
+                kicker,
+                theme::regular(11.5),
+                TEXT_DIM,
+            );
     }
 }
 
@@ -200,7 +182,11 @@ pub fn cover_uv(texture: Vec2, target: Vec2) -> Rect {
 
 fn tooltip(ui: &mut Ui, card: &Card) {
     ui.set_max_width(320.0);
-    ui.label(RichText::new(&card.title).family(egui::FontFamily::Name(theme::SEMIBOLD.into())).size(15.0));
+    ui.label(
+        RichText::new(&card.title)
+            .family(egui::FontFamily::Name(theme::SEMIBOLD.into()))
+            .size(15.0),
+    );
     let mut meta: Vec<String> = Vec::new();
     if let Some(year) = card.year {
         meta.push(year.to_string());
@@ -232,8 +218,11 @@ pub fn shelf(
         return;
     }
     ui.add_space(10.0);
-    ui.label(RichText::new(&shelf.title).font(theme::semibold(20.0)).color(TEXT));
-    ui.add_space(6.0);
+    // A hand-picked row on DR's front page has no heading; the art carries it.
+    if !shelf.title.is_empty() {
+        ui.label(RichText::new(&shelf.title).font(theme::semibold(20.0)).color(TEXT));
+        ui.add_space(6.0);
+    }
     egui::ScrollArea::horizontal()
         .id_salt(("shelf", &shelf.id))
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
@@ -266,10 +255,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     };
     painter.rect_filled(rect, CornerRadius::same(16), fill);
     painter.galley(
-        pos2(
-            rect.center().x - galley.size().x * 0.5,
-            rect.center().y - galley.size().y * 0.5,
-        ),
+        pos2(rect.center().x - galley.size().x * 0.5, rect.center().y - galley.size().y * 0.5),
         galley,
         text,
     );
@@ -284,10 +270,7 @@ pub fn badge(ui: &mut Ui, text: &str) {
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect_filled(rect, CornerRadius::same(6), SURFACE);
     ui.painter().galley(
-        pos2(
-            rect.center().x - galley.size().x * 0.5,
-            rect.center().y - galley.size().y * 0.5,
-        ),
+        pos2(rect.center().x - galley.size().x * 0.5, rect.center().y - galley.size().y * 0.5),
         galley,
         TEXT_DIM,
     );
@@ -313,11 +296,7 @@ pub fn primary_button(ui: &mut Ui, label: &str, icon: Option<Icon>) -> Response 
         );
         x += icon_width;
     }
-    painter.galley(
-        pos2(x, rect.center().y - galley.size().y * 0.5),
-        galley,
-        Color32::WHITE,
-    );
+    painter.galley(pos2(x, rect.center().y - galley.size().y * 0.5), galley, Color32::WHITE);
     response.on_hover_cursor(CursorIcon::PointingHand)
 }
 
@@ -330,7 +309,12 @@ pub fn ghost_button(ui: &mut Ui, label: &str, icon: Option<Icon>) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(8), SURFACE);
-    painter.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        CornerRadius::same(8),
+        Stroke::new(1.0, BORDER),
+        egui::StrokeKind::Inside,
+    );
     let mut x = rect.center().x - (galley.size().x + icon_width) * 0.5;
     if let Some(icon) = icon {
         icons::paint(

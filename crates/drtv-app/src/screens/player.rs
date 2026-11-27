@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 use drtv_player::{Backend, TrackKind, clock};
 use drtv_ui::theme::{self, ACCENT, BG, TEXT, TEXT_DIM, TEXT_FAINT};
 use drtv_ui::{icons, widgets};
-use egui::{Align, Color32, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
+use egui::{
+    Align, Color32, Layout, Rect, RichText, Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
+};
 
 use crate::app::{DrtvApp, Menu, Route};
 use crate::worker::{Cmd, Stream};
@@ -26,9 +28,9 @@ impl DrtvApp {
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
 
-        let Some((duration, paused, error)) = self.playback.as_ref().map(|p| {
-            (p.duration, p.paused, p.error.clone())
-        }) else {
+        let Some((duration, paused, error)) =
+            self.playback.as_ref().map(|p| (p.duration, p.paused, p.error.clone()))
+        else {
             // A stream request that is still in flight, or one that failed and already went back.
             widgets::loading(ui, "Starter afspilning …");
             return;
@@ -54,10 +56,8 @@ impl DrtvApp {
             let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
                 drtv_player::blit(painter.gl(), &info, framebuffer, size);
             });
-            ui.painter().add(egui::PaintCallback {
-                rect: video_rect,
-                callback: Arc::new(callback),
-            });
+            ui.painter()
+                .add(egui::PaintCallback { rect: video_rect, callback: Arc::new(callback) });
         }
 
         // One full-surface click target under the HUD: a click toggles playback, a double click goes
@@ -79,9 +79,7 @@ impl DrtvApp {
             let width = rect.width().min(520.0);
             let area = Rect::from_center_size(rect.center(), vec2(width, 140.0));
             ui.scope_builder(
-                UiBuilder::new()
-                    .max_rect(area)
-                    .layout(Layout::top_down(Align::Center)),
+                UiBuilder::new().max_rect(area).layout(Layout::top_down(Align::Center)),
                 |ui| {
                     ui.label(
                         RichText::new("Afspilningen stoppede")
@@ -99,12 +97,14 @@ impl DrtvApp {
             return;
         }
 
-        let buffering = duration <= 0.0
-            && self.player.as_ref().and_then(|p| p.position()).is_none()
-            && !paused;
+        let buffering =
+            duration <= 0.0 && self.player.as_ref().and_then(|p| p.position()).is_none() && !paused;
         if buffering {
-            ui.painter()
-                .add(egui::Shape::circle_stroke(rect.center(), 20.0, Stroke::new(2.0, ACCENT)));
+            ui.painter().add(egui::Shape::circle_stroke(
+                rect.center(),
+                20.0,
+                Stroke::new(2.0, ACCENT),
+            ));
             ui.ctx().request_repaint_after(Duration::from_millis(120));
         }
     }
@@ -121,11 +121,9 @@ impl DrtvApp {
 
     fn hud(&mut self, ui: &mut Ui, rect: Rect) {
         let (paused, menu_open, hud_until) = match &self.playback {
-            Some(p) => (
-                self.player.as_ref().is_some_and(|p| p.paused()),
-                p.menu.is_some(),
-                p.hud_until,
-            ),
+            Some(p) => {
+                (self.player.as_ref().is_some_and(|p| p.paused()), p.menu.is_some(), p.hud_until)
+            }
             None => return,
         };
         let visible = paused || menu_open || hud_until.is_some_and(|until| until > Instant::now());
@@ -173,9 +171,7 @@ impl DrtvApp {
                 ui.add_space(6.0);
                 if let Some(playback) = &self.playback {
                     ui.label(
-                        RichText::new(&playback.card.title)
-                            .font(theme::semibold(17.0))
-                            .color(TEXT),
+                        RichText::new(&playback.card.title).font(theme::semibold(17.0)).color(TEXT),
                     );
                     let kicker = playback.card.kicker();
                     if !kicker.is_empty() {
@@ -194,11 +190,7 @@ impl DrtvApp {
             .or_else(|| self.playback.as_ref().map(|p| p.duration))
             .unwrap_or(0.0);
         let markers = self.playback.as_ref().map(|p| p.markers.clone()).unwrap_or_default();
-        let shown = self
-            .playback
-            .as_ref()
-            .and_then(|p| p.scrubbing)
-            .unwrap_or(position);
+        let shown = self.playback.as_ref().and_then(|p| p.scrubbing).unwrap_or(position);
 
         ui.scope_builder(UiBuilder::new().max_rect(scrub), |ui| {
             let width = ui.available_width();
@@ -226,9 +218,7 @@ impl DrtvApp {
         }
 
         ui.scope_builder(
-            UiBuilder::new()
-                .max_rect(controls)
-                .layout(Layout::left_to_right(Align::Center)),
+            UiBuilder::new().max_rect(controls).layout(Layout::left_to_right(Align::Center)),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 if icons::icon_button(
@@ -244,7 +234,13 @@ impl DrtvApp {
                     }
                     self.wake_hud();
                 }
-                if icons::icon_button(ui, icons::Icon::Next, 30.0, TEXT_DIM)
+                if icons::icon_button(ui, icons::Icon::ChevronLeft, 30.0, TEXT_DIM)
+                    .on_hover_text("10 sekunder tilbage")
+                    .clicked()
+                {
+                    self.seek_by(-10.0);
+                }
+                if icons::icon_button(ui, icons::Icon::ChevronRight, 30.0, TEXT_DIM)
                     .on_hover_text("10 sekunder frem")
                     .clicked()
                 {
@@ -261,13 +257,11 @@ impl DrtvApp {
                     if icons::icon_button(ui, icons::Icon::Fullscreen, 30.0, TEXT_DIM).clicked() {
                         self.toggle_fullscreen(ui.ctx());
                     }
-                    let audio_open = self
-                        .playback
-                        .as_ref()
-                        .is_some_and(|p| p.menu == Some(Menu::Audio));
+                    let audio_open =
+                        self.playback.as_ref().is_some_and(|p| p.menu == Some(Menu::Audio));
                     if icons::icon_button(
                         ui,
-                        icons::Icon::Volume,
+                        icons::Icon::Audio,
                         30.0,
                         if audio_open { TEXT } else { TEXT_DIM },
                     )
@@ -276,10 +270,8 @@ impl DrtvApp {
                     {
                         self.toggle_menu(Menu::Audio);
                     }
-                    let subs_open = self
-                        .playback
-                        .as_ref()
-                        .is_some_and(|p| p.menu == Some(Menu::Subtitles));
+                    let subs_open =
+                        self.playback.as_ref().is_some_and(|p| p.menu == Some(Menu::Subtitles));
                     if icons::icon_button(
                         ui,
                         icons::Icon::Subtitles,
@@ -331,11 +323,7 @@ impl DrtvApp {
 
     fn toggle_menu(&mut self, menu: Menu) {
         if let Some(playback) = self.playback.as_mut() {
-            playback.menu = if playback.menu == Some(menu) {
-                None
-            } else {
-                Some(menu)
-            };
+            playback.menu = if playback.menu == Some(menu) { None } else { Some(menu) };
         }
         self.wake_hud();
     }
@@ -363,8 +351,7 @@ impl DrtvApp {
             pos2(rect.right() - 44.0 - width, rect.bottom() - 100.0 - height),
             vec2(width, height),
         );
-        ui.painter()
-            .rect_filled(anchor, theme::RADIUS, Color32::from_rgb(0x12, 0x12, 0x16));
+        ui.painter().rect_filled(anchor, theme::RADIUS, Color32::from_rgb(0x12, 0x12, 0x16));
         ui.painter().rect_stroke(
             anchor,
             theme::RADIUS,
@@ -480,19 +467,12 @@ impl DrtvApp {
         if let (Some(player), Some(playback)) = (self.player.as_mut(), self.playback.as_mut()) {
             player.load(&stream.url, start);
             player.set_volume(playback.volume);
-            playback.duration = if stream.duration_s > 0 {
-                stream.duration_s as f64
-            } else {
-                playback.duration
-            };
+            playback.duration =
+                if stream.duration_s > 0 { stream.duration_s as f64 } else { playback.duration };
             playback.markers = stream.markers;
             playback.last_position = start.unwrap_or(0.0);
         }
-        let title = self
-            .playback
-            .as_ref()
-            .map(|p| p.card.title.clone())
-            .unwrap_or_default();
+        let title = self.playback.as_ref().map(|p| p.card.title.clone()).unwrap_or_default();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{title} — DRTV")));
     }
 
@@ -563,10 +543,10 @@ impl DrtvApp {
             // The film reached its end: tell DR it is watched, then hand the viewer back their page.
             if let Some(playback) = &self.playback {
                 let length = playback.duration.max(1.0) as i64;
-                let _ = self.workers.api().send(Cmd::Progress {
-                    item_id: playback.card.id.clone(),
-                    position: length,
-                });
+                let _ = self
+                    .workers
+                    .api()
+                    .send(Cmd::Progress { item_id: playback.card.id.clone(), position: length });
                 self.toast("Markeret som set");
             }
             self.stop_playback(false);
@@ -634,11 +614,7 @@ fn scrubber(
         }
     }
 
-    let frac = if duration > 0.0 {
-        (position / duration).clamp(0.0, 1.0) as f32
-    } else {
-        0.0
-    };
+    let frac = if duration > 0.0 { (position / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };
     let head = rect.left() + width * frac;
     painter.rect_filled(
         Rect::from_min_max(track.left_top(), pos2(head, track.bottom())),

@@ -19,30 +19,28 @@ const ACTIVATE_URL: &str = "https://www.dr.dk/aktiver";
 
 impl DrtvApp {
     pub(crate) fn account_ui(&mut self, ui: &mut Ui) {
-        egui::Frame::NONE
-            .inner_margin(egui::Margin::symmetric(28, 24))
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("account")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_max_width(560.0);
-                        if self.account.signed_in {
-                            self.profile_picker(ui);
-                        } else {
-                            self.sign_in(ui);
-                        }
-                        ui.add_space(24.0);
-                        ui.label(
-                            RichText::new(
-                                "Uofficiel DRTV-klient. Denne app er ikke lavet af, godkendt af \
+        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(28, 24)).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("account").auto_shrink([false, false]).show(
+                ui,
+                |ui| {
+                    ui.set_max_width(560.0);
+                    if self.account.signed_in {
+                        self.profile_picker(ui);
+                    } else {
+                        self.sign_in(ui);
+                    }
+                    ui.add_space(24.0);
+                    ui.label(
+                        RichText::new(
+                            "Uofficiel DRTV-klient. Denne app er ikke lavet af, godkendt af \
                                  eller tilknyttet DR.",
-                            )
-                            .font(theme::regular(11.5))
-                            .color(TEXT_FAINT),
-                        );
-                    });
-            });
+                        )
+                        .font(theme::regular(11.5))
+                        .color(TEXT_FAINT),
+                    );
+                },
+            );
+        });
     }
 
     fn sign_in(&mut self, ui: &mut Ui) {
@@ -84,12 +82,8 @@ impl DrtvApp {
                 );
                 // Space the code out by hand: it is read off a screen and typed on a phone, and
                 // Inter's default tracking turns "8" and "B" into the same shape at a glance.
-                let spaced: String = code
-                    .user_code
-                    .chars()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let spaced: String =
+                    code.user_code.chars().map(|c| c.to_string()).collect::<Vec<_>>().join(" ");
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -113,9 +107,7 @@ impl DrtvApp {
                     if polling {
                         ui.spinner();
                         ui.label(
-                            RichText::new("Venter på godkendelse …")
-                                .color(TEXT_DIM)
-                                .size(13.0),
+                            RichText::new("Venter på godkendelse …").color(TEXT_DIM).size(13.0),
                         );
                     }
                 });
@@ -128,11 +120,7 @@ impl DrtvApp {
                 }
             }
             None => {
-                let label = if self.account.busy {
-                    "Henter kode …"
-                } else {
-                    "Log ind med DR"
-                };
+                let label = if self.account.busy { "Henter kode …" } else { "Log ind med DR" };
                 if widgets::primary_button(ui, label, Some(icons::Icon::Play)).clicked()
                     && !self.account.busy
                 {
@@ -162,11 +150,7 @@ impl DrtvApp {
     }
 
     fn profile_picker(&mut self, ui: &mut Ui) {
-        ui.label(
-            RichText::new("Hvem ser med?")
-                .font(theme::semibold(30.0))
-                .color(TEXT),
-        );
+        ui.label(RichText::new("Hvem ser med?").font(theme::semibold(30.0)).color(TEXT));
         ui.add_space(4.0);
         ui.label(
             RichText::new("Profiler bestemmer, hvilket katalog DRTV viser — også børnenes.")
@@ -227,39 +211,24 @@ impl DrtvApp {
 fn profile_tile(ui: &mut Ui, profile: &auth::Profile, active: bool) -> egui::Response {
     let size = vec2(150.0, 138.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    let fill = if response.hovered() {
-        theme::SURFACE_HI
-    } else {
-        SURFACE
-    };
+    let fill = if response.hovered() { theme::SURFACE_HI } else { SURFACE };
     let painter = ui.painter();
     painter.rect_filled(rect, theme::RADIUS, fill);
     painter.rect_stroke(
         rect,
         theme::RADIUS,
-        egui::Stroke::new(
-            if active { 2.0 } else { 1.0 },
-            if active { ACCENT } else { BORDER },
-        ),
+        egui::Stroke::new(if active { 2.0 } else { 1.0 }, if active { ACCENT } else { BORDER }),
         egui::StrokeKind::Inside,
     );
 
-    let avatar = egui::Rect::from_center_size(
-        pos2(rect.center().x, rect.top() + 48.0),
-        vec2(58.0, 58.0),
-    );
+    let avatar =
+        egui::Rect::from_center_size(pos2(rect.center().x, rect.top() + 48.0), vec2(58.0, 58.0));
     let tint = parse_color(&profile.color).unwrap_or(SURFACE_HI);
     painter.circle_filled(avatar.center(), 29.0, tint);
     painter.text(
         avatar.center(),
         egui::Align2::CENTER_CENTER,
-        profile
-            .name
-            .chars()
-            .next()
-            .unwrap_or('·')
-            .to_uppercase()
-            .to_string(),
+        profile.name.chars().next().unwrap_or('·').to_uppercase().to_string(),
         theme::semibold(24.0),
         TEXT,
     );

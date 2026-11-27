@@ -7,7 +7,9 @@
 use drtv_api::card::{Card, Detail};
 use drtv_ui::theme::{self, ACCENT, BG, BORDER, SURFACE, TEXT, TEXT_DIM, TEXT_FAINT};
 use drtv_ui::{icons, widgets};
-use egui::{Align, Color32, Layout, Rect, Response, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{
+    Align, Color32, Layout, Rect, Response, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
+};
 
 use crate::app::{DrtvApp, Load, Route};
 use crate::screens::{prefetch_wide, tile_width};
@@ -28,8 +30,12 @@ impl DrtvApp {
                 // The backdrop is asked for at twice the window width so it stays sharp on a HiDPI
                 // display; the CDN clamps it to what it actually has.
                 let width = ui.available_width().max(640.0);
-                self.images
-                    .want(&self.workers, &detail.card.still, (width * 2.0) as u32, (width * 2.0 / 16.0 * 9.0) as u32);
+                self.images.want(
+                    &self.workers,
+                    &detail.card.still,
+                    (width * 2.0) as u32,
+                    (width * 2.0 / 16.0 * 9.0) as u32,
+                );
 
                 let mut action: Option<Action> = None;
                 egui::ScrollArea::vertical()
@@ -37,9 +43,9 @@ impl DrtvApp {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         hero(ui, detail, &self.images, &mut action);
-                        egui::Frame::NONE
-                            .inner_margin(egui::Margin::symmetric(28, 8))
-                            .show(ui, |ui| {
+                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(28, 8)).show(
+                            ui,
+                            |ui| {
                                 let tile = tile_width(ui.available_width());
                                 if !detail.seasons.is_empty() {
                                     prefetch_wide(
@@ -70,7 +76,12 @@ impl DrtvApp {
                                 }
 
                                 if !detail.episodes.is_empty() {
-                                    prefetch_wide(&mut self.images, &self.workers, &detail.episodes, 160.0);
+                                    prefetch_wide(
+                                        &mut self.images,
+                                        &self.workers,
+                                        &detail.episodes,
+                                        160.0,
+                                    );
                                     ui.label(
                                         RichText::new("Afsnit")
                                             .font(theme::semibold(19.0))
@@ -80,15 +91,22 @@ impl DrtvApp {
                                     let images = &self.images;
                                     let lookup = |url: &str| images.get(url);
                                     for episode in &detail.episodes {
-                                        if episode_row(ui, episode, &lookup, ui.available_width())
-                                            .clicked()
+                                        if episode_row(
+                                            ui,
+                                            episode,
+                                            &detail.card.title,
+                                            &lookup,
+                                            ui.available_width(),
+                                        )
+                                        .clicked()
                                         {
                                             action = Some(Action::Play(episode.clone()));
                                         }
                                     }
                                     ui.add_space(20.0);
                                 }
-                            });
+                            },
+                        );
                     });
 
                 match action {
@@ -141,10 +159,7 @@ impl DrtvApp {
             volume: 100.0,
             muted: false,
         });
-        let _ = self.workers.api().send(Cmd::Stream {
-            id: card.id.clone(),
-            generation,
-        });
+        let _ = self.workers.api().send(Cmd::Stream { id: card.id.clone(), generation });
     }
 }
 
@@ -158,7 +173,7 @@ enum Action {
 
 /// The episode a play button should start: the one in progress, else the first unwatched, else the
 /// first. This is what DR's own "Fortsæt" does, and it is why the button's label changes.
-fn playable(detail: &Detail) -> Option<Card> {
+pub(crate) fn playable(detail: &Detail) -> Option<Card> {
     match detail.card.kind.as_str() {
         "movie" | "episode" | "program" => Some(detail.card.clone()),
         _ => {
@@ -173,55 +188,52 @@ fn playable(detail: &Detail) -> Option<Card> {
     }
 }
 
-fn hero(ui: &mut Ui, detail: &Detail, images: &crate::images::ImageCache, action: &mut Option<Action>) {
+fn hero(
+    ui: &mut Ui,
+    detail: &Detail,
+    images: &crate::images::ImageCache,
+    action: &mut Option<Action>,
+) {
     let width = ui.available_width();
     let height = 400.0;
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
 
     // Artwork, cover-cropped. A title with no landscape art falls back to its poster, cropped.
-    let texture = images
-        .get(&detail.card.still)
-        .or_else(|| images.get(&detail.card.poster));
+    let texture = images.get(&detail.card.still).or_else(|| images.get(&detail.card.poster));
     if let Some(texture) = texture {
         let uv = widgets::cover_uv(texture.size_vec2(), rect.size());
-        egui::Image::new(egui::load::SizedTexture::new(texture.id(), rect.size()))
-            .uv(uv)
-            .paint_at(ui, rect);
+        ui.painter().image(texture.id(), rect, uv, egui::Color32::WHITE);
     } else {
         ui.painter().rect_filled(rect, 0.0, SURFACE);
     }
 
     // Two gradients: the top one lets the nav bar sit on the art, the bottom one hands the art back
     // to the page background so the copy does not float on a hard edge.
-    widgets::gradient(ui, Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + 120.0)), BG.gamma_multiply(0.85), Color32::TRANSPARENT);
     widgets::gradient(
         ui,
-        Rect::from_min_max(pos2(rect.left(), rect.top() + 120.0), rect.max),
+        Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + 120.0)),
+        BG.gamma_multiply(0.85),
         Color32::TRANSPARENT,
-        BG,
     );
+    // Twice, because one pass of a linear gradient leaves the copy sitting on a bright scene at
+    // roughly 40% black; the second pass is what makes white text readable over sunlit footage.
+    let fade = Rect::from_min_max(pos2(rect.left(), rect.top() + 120.0), rect.max);
+    widgets::gradient(ui, fade, Color32::TRANSPARENT, BG);
+    widgets::gradient(ui, fade, Color32::TRANSPARENT, BG);
 
     let content = Rect::from_min_max(
         pos2(rect.left() + 40.0, rect.top() + 118.0),
         pos2(rect.right() - 40.0, rect.bottom() - 18.0),
     );
     ui.scope_builder(
-        UiBuilder::new()
-            .max_rect(content)
-            .layout(Layout::top_down(Align::Min)),
+        UiBuilder::new().max_rect(content).layout(Layout::top_down(Align::Min)),
         |ui| {
             ui.set_max_width(660.0);
             let card = &detail.card;
-            ui.label(
-                RichText::new(&card.title)
-                    .font(theme::semibold(38.0))
-                    .color(TEXT),
-            );
+            ui.label(RichText::new(&card.title).font(theme::semibold(38.0)).color(TEXT));
             if !card.episode_name.is_empty() && card.episode_name != card.title {
                 ui.label(
-                    RichText::new(&card.episode_name)
-                        .font(theme::medium(16.0))
-                        .color(TEXT_DIM),
+                    RichText::new(&card.episode_name).font(theme::medium(16.0)).color(TEXT_DIM),
                 );
             }
             ui.add_space(6.0);
@@ -245,7 +257,9 @@ fn hero(ui: &mut Ui, detail: &Detail, images: &crate::images::ImageCache, action
                     ui.label(RichText::new(length).color(TEXT_DIM).size(13.0));
                     dot(ui);
                 }
-                for genre in card.genres.iter().take(2) {
+                for genre in
+                    card.genres.iter().filter(|g| !g.eq_ignore_ascii_case("ukendt")).take(2)
+                {
                     ui.label(RichText::new(genre).color(TEXT_DIM).size(13.0));
                     dot(ui);
                 }
@@ -257,9 +271,7 @@ fn hero(ui: &mut Ui, detail: &Detail, images: &crate::images::ImageCache, action
             if !card.description.is_empty() {
                 ui.add_space(6.0);
                 ui.label(
-                    RichText::new(&card.description)
-                        .font(theme::regular(14.0))
-                        .color(TEXT_DIM),
+                    RichText::new(&card.description).font(theme::regular(14.0)).color(TEXT_DIM),
                 );
             }
 
@@ -290,12 +302,9 @@ fn hero(ui: &mut Ui, detail: &Detail, images: &crate::images::ImageCache, action
                         *action = Some(Action::Restart(card.clone()));
                     }
                     ui.label(
-                        RichText::new(format!(
-                            "{} set",
-                            theme::length(card.resume_seconds())
-                        ))
-                        .color(TEXT_FAINT)
-                        .size(12.5),
+                        RichText::new(format!("{} set", theme::length(card.resume_seconds())))
+                            .color(TEXT_FAINT)
+                            .size(12.5),
                     );
                 }
                 if detail.card.kind == "episode"
@@ -309,39 +318,51 @@ fn hero(ui: &mut Ui, detail: &Detail, images: &crate::images::ImageCache, action
     );
 }
 
+/// DR titles an episode `"Show: Episode name"`, which repeats the heading directly above the row.
+fn episode_title<'a>(title: &'a str, show: &str) -> &'a str {
+    if show.is_empty() {
+        return title;
+    }
+    title.strip_prefix(show).and_then(|rest| rest.strip_prefix(": ")).unwrap_or(title)
+}
+
 fn dot(ui: &mut Ui) {
     ui.label(RichText::new("·").color(TEXT_FAINT).size(13.0));
 }
 
-fn episode_row(ui: &mut Ui, card: &Card, images: &dyn Fn(&str) -> Option<egui::TextureHandle>, width: f32) -> Response {
+fn episode_row(
+    ui: &mut Ui,
+    card: &Card,
+    show: &str,
+    images: &dyn Fn(&str) -> Option<egui::TextureHandle>,
+    width: f32,
+) -> Response {
     let height = 88.0;
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let hovered = response.hovered();
 
     if hovered {
-        ui.painter()
-            .rect_filled(rect, theme::RADIUS_SM, SURFACE.gamma_multiply(0.85));
+        ui.painter().rect_filled(rect, theme::RADIUS_SM, SURFACE.gamma_multiply(0.85));
     }
 
-    let thumb = Rect::from_min_size(
-        pos2(rect.left() + 4.0, rect.center().y - 36.0),
-        vec2(128.0, 72.0),
-    );
+    let thumb =
+        Rect::from_min_size(pos2(rect.left() + 4.0, rect.center().y - 36.0), vec2(128.0, 72.0));
     let url = if !card.still.is_empty() { &card.still } else { &card.poster };
     match images(url) {
         Some(texture) => {
             let uv = widgets::cover_uv(texture.size_vec2(), thumb.size());
-            egui::Image::new(egui::load::SizedTexture::new(texture.id(), thumb.size()))
-                .uv(uv)
-                .corner_radius(theme::RADIUS_SM)
-                .paint_at(ui, thumb);
+            ui.painter().image(texture.id(), thumb, uv, egui::Color32::WHITE);
         }
         None => {
             ui.painter().rect_filled(thumb, theme::RADIUS_SM, SURFACE);
         }
     }
-    ui.painter()
-        .rect_stroke(thumb, theme::RADIUS_SM, Stroke::new(1.0, BORDER), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        thumb,
+        theme::RADIUS_SM,
+        Stroke::new(1.0, BORDER),
+        egui::StrokeKind::Inside,
+    );
 
     if card.progress() > 0.0 {
         let track = Rect::from_min_max(
@@ -356,8 +377,7 @@ fn episode_row(ui: &mut Ui, card: &Card, images: &dyn Fn(&str) -> Option<egui::T
         ui.painter().rect_filled(filled, 2.0, ACCENT);
     } else if hovered {
         let play = Rect::from_center_size(thumb.center(), vec2(30.0, 30.0));
-        ui.painter()
-            .circle_filled(play.center(), 15.0, Color32::from_black_alpha(150));
+        ui.painter().circle_filled(play.center(), 15.0, Color32::from_black_alpha(150));
         icons::paint(ui.painter(), play.shrink(8.0), icons::Icon::Play, Color32::WHITE);
     }
 
@@ -366,12 +386,7 @@ fn episode_row(ui: &mut Ui, card: &Card, images: &dyn Fn(&str) -> Option<egui::T
     let mut y = rect.top() + 12.0;
     let painter = ui.painter();
 
-    let mut kicker = vec![card.kicker()];
-    if card.kind == "episode" && !card.label.as_deref().unwrap_or("").is_empty() {
-        // DR's own label already carries "S5:E31"; the kicker covers the rest of the cases.
-        kicker.truncate(1);
-    }
-    let kicker = kicker.join(" · ");
+    let kicker = card.kicker();
     if !kicker.is_empty() {
         painter.text(
             pos2(text_left, y),
@@ -383,19 +398,20 @@ fn episode_row(ui: &mut Ui, card: &Card, images: &dyn Fn(&str) -> Option<egui::T
         y += 16.0;
     }
 
-    let galley = painter.layout(card.title.clone(), theme::semibold(15.0), TEXT, text_width);
-    painter.with_clip_rect(Rect::from_min_size(pos2(text_left, y), vec2(text_width, 22.0)))
-        .galley(pos2(text_left, y), galley, TEXT);
+    let title = episode_title(&card.title, show);
+    let galley = painter.layout(title.to_string(), theme::semibold(15.0), TEXT, text_width);
+    painter.with_clip_rect(Rect::from_min_size(pos2(text_left, y), vec2(text_width, 22.0))).galley(
+        pos2(text_left, y),
+        galley,
+        TEXT,
+    );
     y += 24.0;
 
     if !card.description.is_empty() {
-        let galley = painter.layout(
-            card.description.clone(),
-            theme::regular(12.5),
-            TEXT_DIM,
-            text_width,
-        );
-        painter.with_clip_rect(Rect::from_min_size(pos2(text_left, y), vec2(text_width, 18.0)))
+        let galley =
+            painter.layout(card.description.clone(), theme::regular(12.5), TEXT_DIM, text_width);
+        painter
+            .with_clip_rect(Rect::from_min_size(pos2(text_left, y), vec2(text_width, 18.0)))
             .galley(pos2(text_left, y), galley, TEXT_DIM);
     }
 

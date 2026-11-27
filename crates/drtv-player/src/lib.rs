@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::PaintCallbackInfo;
 use glow::HasContext as _;
-use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
 use libmpv2::Mpv;
+use libmpv2::render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlayerError {
@@ -240,10 +240,7 @@ impl VideoPlayer {
                 self.gl.delete_framebuffer(surface.framebuffer);
                 self.gl.delete_texture(surface.texture);
             }
-            let texture = self
-                .gl
-                .create_texture()
-                .map_err(|e| PlayerError::Gl(e.to_string()))?;
+            let texture = self.gl.create_texture().map_err(|e| PlayerError::Gl(e.to_string()))?;
             self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
             self.gl.tex_image_2d(
                 glow::TEXTURE_2D,
@@ -278,10 +275,8 @@ impl VideoPlayer {
             );
             self.gl.bind_texture(glow::TEXTURE_2D, None);
 
-            let framebuffer = self
-                .gl
-                .create_framebuffer()
-                .map_err(|e| PlayerError::Gl(e.to_string()))?;
+            let framebuffer =
+                self.gl.create_framebuffer().map_err(|e| PlayerError::Gl(e.to_string()))?;
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
             self.gl.framebuffer_texture_2d(
                 glow::FRAMEBUFFER,
@@ -297,11 +292,7 @@ impl VideoPlayer {
                 self.gl.delete_texture(texture);
                 return Err(PlayerError::Framebuffer(format!("0x{status:x}")));
             }
-            self.surface = Some(Surface {
-                texture,
-                framebuffer,
-                size,
-            });
+            self.surface = Some(Surface { texture, framebuffer, size });
         }
         Ok(())
     }
@@ -394,9 +385,7 @@ impl Backend for VideoPlayer {
     }
 
     fn seek_to(&self, seconds: f64) {
-        self.mpv
-            .command("seek", &[&seconds.max(0.0).to_string(), "absolute"])
-            .ok();
+        self.mpv.command("seek", &[&seconds.max(0.0).to_string(), "absolute"]).ok();
     }
 
     fn position(&self) -> Option<f64> {
@@ -440,8 +429,14 @@ impl Backend for VideoPlayer {
                 Some(Track {
                     id: self.mpv.get_property(&format!("track-list/{i}/id")).ok()?,
                     kind,
-                    title: self.mpv.get_property(&format!("track-list/{i}/title")).unwrap_or_default(),
-                    lang: self.mpv.get_property(&format!("track-list/{i}/lang")).unwrap_or_default(),
+                    title: self
+                        .mpv
+                        .get_property(&format!("track-list/{i}/title"))
+                        .unwrap_or_default(),
+                    lang: self
+                        .mpv
+                        .get_property(&format!("track-list/{i}/lang"))
+                        .unwrap_or_default(),
                     selected: self
                         .mpv
                         .get_property::<bool>(&format!("track-list/{i}/selected"))
@@ -461,9 +456,7 @@ impl Backend for VideoPlayer {
 
     fn set_subtitles_visible(&self, visible: bool) {
         // `sid` accepts "no" and "auto"; "auto" picks the stream's default again.
-        self.mpv
-            .set_property("sid", if visible { "auto" } else { "no" })
-            .ok();
+        self.mpv.set_property("sid", if visible { "auto" } else { "no" }).ok();
     }
 
     fn stop(&self) {
@@ -514,10 +507,8 @@ pub fn blit(
             glow::LINEAR,
         );
 
-        let previous = u32::try_from(previous)
-            .ok()
-            .and_then(NonZeroU32::new)
-            .map(glow::NativeFramebuffer);
+        let previous =
+            u32::try_from(previous).ok().and_then(NonZeroU32::new).map(glow::NativeFramebuffer);
         gl.bind_framebuffer(glow::READ_FRAMEBUFFER, previous);
     }
 }
@@ -527,11 +518,7 @@ pub fn blit(
 pub fn clock(seconds: f64) -> String {
     let total = seconds.max(0.0) as u64;
     let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60);
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
-    }
+    if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
 }
 
 #[cfg(test)]

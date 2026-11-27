@@ -56,17 +56,13 @@ pub fn install(ctx: &egui::Context) {
     );
 
     // Inter first, then egui's own fallbacks — those carry the emoji and the symbol glyphs.
-    let proportional = fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default();
+    let proportional = fonts.families.entry(FontFamily::Proportional).or_default();
     proportional.insert(0, "inter".to_owned());
 
     for (name, font) in [(SEMIBOLD, "inter-semibold"), (MEDIUM, "inter-medium")] {
-        fonts.families.insert(
-            FontFamily::Name(name.into()),
-            vec![font.to_owned(), "inter".to_owned()],
-        );
+        fonts
+            .families
+            .insert(FontFamily::Name(name.into()), vec![font.to_owned(), "inter".to_owned()]);
     }
     ctx.set_fonts(fonts);
 
@@ -129,11 +125,7 @@ pub fn length(seconds: i64) -> String {
         m if m < 60 => format!("{m} min"),
         m => {
             let (h, m) = (m / 60, m % 60);
-            if m == 0 {
-                format!("{h} t")
-            } else {
-                format!("{h} t {m} min")
-            }
+            if m == 0 { format!("{h} t") } else { format!("{h} t {m} min") }
         }
     }
 }

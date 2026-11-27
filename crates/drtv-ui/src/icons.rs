@@ -22,6 +22,7 @@ pub enum Icon {
     Subtitles,
     Next,
     Fullscreen,
+    Audio,
     Check,
     Settings,
 }
@@ -129,6 +130,12 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 color,
             );
         }
+        Icon::Audio => {
+            for (i, height) in [8.0f32, 14.0, 6.0].into_iter().enumerate() {
+                let x = 7.0 + i as f32 * 5.0;
+                g.line(&[(x, 12.0 - height / 2.0), (x, 12.0 + height / 2.0)], 2.2, color, painter);
+            }
+        }
         Icon::Fullscreen => {
             for (corner, dx, dy) in [
                 ((4.0, 4.0), 5.0, 5.0),
@@ -147,10 +154,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 let angle = i as f32 * std::f32::consts::TAU / 8.0;
                 let (sin, cos) = angle.sin_cos();
                 g.line(
-                    &[
-                        (12.0 + 6.5 * cos, 12.0 + 6.5 * sin),
-                        (12.0 + 9.0 * cos, 12.0 + 9.0 * sin),
-                    ],
+                    &[(12.0 + 6.5 * cos, 12.0 + 6.5 * sin), (12.0 + 9.0 * cos, 12.0 + 9.0 * sin)],
                     1.9,
                     color,
                     painter,
@@ -165,18 +169,9 @@ pub fn icon_button(ui: &mut egui::Ui, icon: Icon, size: f32, color: Color32) -> 
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     let painter = ui.painter();
     if response.hovered() {
-        painter.circle_filled(
-            rect.center(),
-            size * 0.5,
-            theme::SURFACE_HI.gamma_multiply(0.9),
-        );
+        painter.circle_filled(rect.center(), size * 0.5, theme::SURFACE_HI.gamma_multiply(0.9));
     }
     // The glyph occupies 60% of the button, which leaves the hover disc visible around it.
-    paint(
-        painter,
-        Rect::from_center_size(rect.center(), Vec2::splat(size * 0.6)),
-        icon,
-        color,
-    );
+    paint(painter, Rect::from_center_size(rect.center(), Vec2::splat(size * 0.6)), icon, color);
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

@@ -2,7 +2,7 @@
 //! needed its own struct would need a place to put it that is not the app anyway.
 
 mod account;
-mod detail;
+pub(crate) mod detail;
 mod home;
 mod player;
 mod search;
@@ -27,24 +27,21 @@ fn prefetch(images: &mut ImageCache, workers: &Workers, shelves: &[Shelf], tile:
     let (w, h) = ((tile * 2.0) as u32, (tile * 3.0) as u32);
     for shelf in shelves {
         for card in &shelf.items {
-            let url = if !card.poster.is_empty() {
-                &card.poster
-            } else {
-                &card.still
-            };
+            let url = if !card.poster.is_empty() { &card.poster } else { &card.still };
             images.want(workers, url, w, h);
         }
     }
 }
 
-fn prefetch_wide(images: &mut ImageCache, workers: &Workers, cards: &[drtv_api::card::Card], width: f32) {
+fn prefetch_wide(
+    images: &mut ImageCache,
+    workers: &Workers,
+    cards: &[drtv_api::card::Card],
+    width: f32,
+) {
     let (w, h) = ((width * 2.0) as u32, (width * 2.0 / 16.0 * 9.0) as u32);
     for card in cards {
-        let url = if !card.still.is_empty() {
-            &card.still
-        } else {
-            &card.poster
-        };
+        let url = if !card.still.is_empty() { &card.still } else { &card.poster };
         images.want(workers, url, w, h);
     }
 }

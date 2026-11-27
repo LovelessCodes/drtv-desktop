@@ -19,53 +19,51 @@ const DEBOUNCE: Duration = Duration::from_millis(320);
 
 impl DrtvApp {
     pub(crate) fn search_ui(&mut self, ui: &mut Ui) {
-        egui::Frame::NONE
-            .inner_margin(egui::Margin::symmetric(28, 16))
-            .show(ui, |ui| {
-                self.search_box(ui);
-                ui.add_space(16.0);
+        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(28, 16)).show(ui, |ui| {
+            self.search_box(ui);
+            ui.add_space(16.0);
 
-                let mut opened: Option<Card> = None;
-                match &self.search.load {
-                    Load::Loading => {
-                        if !self.search.term.trim().is_empty() {
-                            widgets::loading(ui, "Søger …");
-                        } else {
-                            hint(ui, "Søg i hele DRTV — film, serier og dokumentarer.");
-                        }
-                    }
-                    Load::Failed(why) => {
-                        let why = why.clone();
-                        widgets::empty(ui, "Søgningen fejlede", &why);
-                    }
-                    Load::Ready(shelves) if shelves.is_empty() => {
-                        hint(ui, "Ingen resultater. Prøv et andet ord.");
-                    }
-                    Load::Ready(shelves) => {
-                        let tile = tile_width(ui.available_width());
-                        prefetch(&mut self.images, &self.workers, shelves, tile);
-                        let term = self.search.term.trim().to_string();
-                        egui::ScrollArea::vertical()
-                            .id_salt("search")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.add_space(2.0);
-                                for shelf in shelves {
-                                    let images = &self.images;
-                                    let lookup = |url: &str| images.get(url);
-                                    widgets::shelf(ui, shelf, &lookup, tile, &mut |card| {
-                                        opened = Some(card.clone());
-                                    });
-                                }
-                                let _ = &term;
-                                ui.add_space(20.0);
-                            });
+            let mut opened: Option<Card> = None;
+            match &self.search.load {
+                Load::Loading => {
+                    if !self.search.term.trim().is_empty() {
+                        widgets::loading(ui, "Søger …");
+                    } else {
+                        hint(ui, "Søg i hele DRTV — film, serier og dokumentarer.");
                     }
                 }
-                if let Some(card) = opened {
-                    self.open_card(card);
+                Load::Failed(why) => {
+                    let why = why.clone();
+                    widgets::empty(ui, "Søgningen fejlede", &why);
                 }
-            });
+                Load::Ready(shelves) if shelves.is_empty() => {
+                    hint(ui, "Ingen resultater. Prøv et andet ord.");
+                }
+                Load::Ready(shelves) => {
+                    let tile = tile_width(ui.available_width());
+                    prefetch(&mut self.images, &self.workers, shelves, tile);
+                    let term = self.search.term.trim().to_string();
+                    egui::ScrollArea::vertical()
+                        .id_salt("search")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.add_space(2.0);
+                            for shelf in shelves {
+                                let images = &self.images;
+                                let lookup = |url: &str| images.get(url);
+                                widgets::shelf(ui, shelf, &lookup, tile, &mut |card| {
+                                    opened = Some(card.clone());
+                                });
+                            }
+                            let _ = &term;
+                            ui.add_space(20.0);
+                        });
+                }
+            }
+            if let Some(card) = opened {
+                self.open_card(card);
+            }
+        });
 
         // The debounce fires here, one frame after the last keystroke, rather than on a timer thread.
         if let Some(due) = self.search.due {
@@ -110,9 +108,7 @@ impl DrtvApp {
         );
         let mut changed = false;
         ui.scope_builder(
-            UiBuilder::new()
-                .max_rect(inner)
-                .layout(Layout::left_to_right(Align::Center)),
+            UiBuilder::new().max_rect(inner).layout(Layout::left_to_right(Align::Center)),
             |ui| {
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.search.term)
@@ -157,10 +153,6 @@ impl DrtvApp {
 fn hint(ui: &mut Ui, text: &str) {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() * 0.24);
-        ui.label(
-            RichText::new(text)
-                .font(theme::regular(14.0))
-                .color(TEXT_FAINT),
-        );
+        ui.label(RichText::new(text).font(theme::regular(14.0)).color(TEXT_FAINT));
     });
 }

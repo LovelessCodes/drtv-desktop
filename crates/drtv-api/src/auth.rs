@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::api::api_base;
-use crate::session::{from_exchange, Tokens};
+use crate::session::{Tokens, from_exchange};
 
 const OIDC: &str = "https://login.dr.dk";
 /// [`OIDC`] unless `DRTV_OIDC` names another server — see [`crate::base`].
@@ -176,7 +176,8 @@ impl Universe {
     /// the whole catalogue behind a typo.
     pub fn of(segments: &[String]) -> Self {
         const WORLDS: [&str; 3] = ["minisjang", "ramasjang", "ultra"];
-        let named: Vec<String> = segments.iter()
+        let named: Vec<String> = segments
+            .iter()
             .map(|s| s.trim().to_ascii_lowercase())
             .filter(|s| !s.is_empty())
             .collect();
@@ -257,10 +258,8 @@ pub fn exchange(access: &str, id: &str, refresh: &str) -> Option<Stored> {
         "optout": false,
     })
     .to_string();
-    let headers = vec![
-        "Content-Type: application/json".to_string(),
-        "Origin: https://www.dr.dk".to_string(),
-    ];
+    let headers =
+        vec!["Content-Type: application/json".to_string(), "Origin: https://www.dr.dk".to_string()];
     let r = drtv_net::post(
         &format!("{}/authorization/exchange", api_base()),
         &headers,
@@ -325,7 +324,9 @@ pub fn profiles() -> Option<Vec<Profile>> {
         return None;
     };
     if stored.account.is_empty() {
-        crate::log("dr-auth: the session carries no account token, so a roster request would be anonymous");
+        crate::log(
+            "dr-auth: the session carries no account token, so a roster request would be anonymous",
+        );
         return None;
     }
     let headers = vec![
@@ -371,8 +372,11 @@ fn parse_profiles(raw: &str) -> Option<Vec<Profile>> {
         serde_json::Value::Array(rows) => (rows.clone(), String::new()),
         obj => {
             let primary = obj.get("primaryProfileId").map(as_id).unwrap_or_default();
-            let rows = obj.get("profiles").or_else(|| obj.get("items"))
-                .and_then(|p| p.as_array()).cloned()?;
+            let rows = obj
+                .get("profiles")
+                .or_else(|| obj.get("items"))
+                .and_then(|p| p.as_array())
+                .cloned()?;
             (rows, primary)
         }
     };
@@ -380,35 +384,55 @@ fn parse_profiles(raw: &str) -> Option<Vec<Profile>> {
     let mut out = Vec::new();
     let mut skipped = 0usize;
     for row in rows {
-        let id = ["id", "profileId"].iter()
-            .find_map(|k| row.get(*k))
-            .map(as_id).unwrap_or_default();
-        if id.is_empty() { skipped += 1; continue; }
-        let name = ["name", "title", "profileName"].iter()
+        let id =
+            ["id", "profileId"].iter().find_map(|k| row.get(*k)).map(as_id).unwrap_or_default();
+        if id.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        let name = ["name", "title", "profileName"]
+            .iter()
             .find_map(|k| row.get(*k).and_then(|s| s.as_str()))
-            .unwrap_or("DR").trim().to_string();
-        let avatar = ["avatar", "image", "imageUrl", "thumb", "profileImage"].iter()
+            .unwrap_or("DR")
+            .trim()
+            .to_string();
+        let avatar = ["avatar", "image", "imageUrl", "thumb", "profileImage"]
+            .iter()
             .find_map(|k| row.get(*k).and_then(|s| s.as_str()))
-            .unwrap_or("").to_string();
+            .unwrap_or("")
+            .to_string();
         // The account's own default is a TOP-LEVEL fact (`primaryProfileId`), not a flag on the
         // row: the rows carry `isActive`, which several profiles can be at once and which this
         // client must not read as "the chosen one".
-        let flagged = ["isDefault", "default", "isPrimary"].iter()
+        let flagged = ["isDefault", "default", "isPrimary"]
+            .iter()
             .any(|k| row.get(*k).and_then(|b| b.as_bool()).unwrap_or(false));
         let is_default = (!primary.is_empty() && id == primary) || flagged;
-        let color = ["color", "colour"].iter()
+        let color = ["color", "colour"]
+            .iter()
             .find_map(|k| row.get(*k).and_then(|s| s.as_str()))
-            .unwrap_or("").to_string();
-        let pin = ["pinEnabled", "pin"].iter()
+            .unwrap_or("")
+            .to_string();
+        let pin = ["pinEnabled", "pin"]
+            .iter()
             .any(|k| row.get(*k).and_then(|b| b.as_bool()).unwrap_or(false));
-        let segments = row.get("segments").and_then(|s| s.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()).collect())
+        let segments = row
+            .get("segments")
+            .and_then(|s| s.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
         out.push(Profile { id, name, avatar, is_default, color, pin, segments });
     }
     if skipped > 0 {
-        crate::log(&format!("dr-auth: {skipped} of {total} roster rows carried no usable id and were skipped"));
+        crate::log(&format!(
+            "dr-auth: {skipped} of {total} roster rows carried no usable id and were skipped"
+        ));
     }
     Some(out)
 }
@@ -482,7 +506,11 @@ pub fn select_profile(profile_id: &str, segments: &[String]) -> Result<Stored, S
 /// The network half of seating, shared by [`select_profile`] (which starts from the file) and
 /// [`renew`] (which starts from the record it is about to save). One answer for both, because a
 /// picker and a refresh must not disagree about what "seated" means.
-fn seat_from(mut stored: Stored, profile_id: &str, segments: &[String]) -> Result<Stored, SeatRefusal> {
+fn seat_from(
+    mut stored: Stored,
+    profile_id: &str,
+    segments: &[String],
+) -> Result<Stored, SeatRefusal> {
     if stored.account.is_empty() {
         return Err(SeatRefusal::NoAccountToken);
     }
@@ -500,12 +528,9 @@ fn seat_from(mut stored: Stored, profile_id: &str, segments: &[String]) -> Resul
         format!("Authorization: Bearer {}", stored.account),
         format!("device: {}", crate::api::DEVICE),
     ];
-    let r = drtv_net::post(
-        &format!("{}/authorization/profile", api_base()),
-        &headers,
-        body.as_bytes(),
-    )
-    .map_err(|_| SeatRefusal::Unreachable)?;
+    let r =
+        drtv_net::post(&format!("{}/authorization/profile", api_base()), &headers, body.as_bytes())
+            .map_err(|_| SeatRefusal::Unreachable)?;
     if !r.ok() {
         return Err(SeatRefusal::Refused(r.status));
     }
@@ -514,7 +539,8 @@ fn seat_from(mut stored: Stored, profile_id: &str, segments: &[String]) -> Resul
     if tokens.profile.is_empty() {
         return Err(SeatRefusal::NoProfileToken);
     }
-    stored.session_id = if tokens.session_id.is_empty() { stored.session_id } else { tokens.session_id };
+    stored.session_id =
+        if tokens.session_id.is_empty() { stored.session_id } else { tokens.session_id };
     stored.user_id = if tokens.user_id.is_empty() { stored.user_id } else { tokens.user_id };
     stored.expires_at = tokens.expires_at;
     stored.profile = tokens.profile;
@@ -522,7 +548,9 @@ fn seat_from(mut stored: Stored, profile_id: &str, segments: &[String]) -> Resul
     // The universe comes from the roster ROW, never from the id: a seat that named a different one
     // would show this viewer another member's catalogue while the history it writes stayed theirs.
     stored.segments = segments.to_vec();
-    if let Some(name) = profile_name(&stored.profile) { stored.name = name; }
+    if let Some(name) = profile_name(&stored.profile) {
+        stored.name = name;
+    }
     Ok(stored)
 }
 
@@ -561,7 +589,9 @@ pub fn sign_out() -> bool {
 }
 
 pub fn save(stored: &Stored) -> bool {
-    let Ok(text) = serde_json::to_string(stored) else { return false };
+    let Ok(text) = serde_json::to_string(stored) else {
+        return false;
+    };
     // Where it already lives, else the first candidate that takes it. A read-only or full
     // `/media/developer` (and this set has come back from standby without the file) must not cost
     // the viewer their session.
@@ -616,7 +646,9 @@ pub fn load() -> Option<Stored> {
 /// install's session, and a sign-out deletes the file, which is exactly right: the next account on
 /// this set is not the one that was pinned.
 pub fn set_auto(profile_id: &str) -> bool {
-    let Some(mut stored) = load() else { return false };
+    let Some(mut stored) = load() else {
+        return false;
+    };
     if stored.auto_profile_id == profile_id {
         return true;
     }
@@ -677,8 +709,8 @@ pub enum Freshness {
 fn renew(stored: &Stored) -> Result<Stored, &'static str> {
     let refresh = stored.oidc_refresh.as_str();
     let body = format!("grant_type=refresh_token&refresh_token={refresh}&client_id={CLIENT_ID}");
-    let raw =
-        form_post(&format!("{}/oidc/token", oidc_base()), body).ok_or("token endpoint unreachable")?;
+    let raw = form_post(&format!("{}/oidc/token", oidc_base()), body)
+        .ok_or("token endpoint unreachable")?;
     let reply: TokenReply = serde_json::from_str(&raw).map_err(|_| "token reply did not parse")?;
     if reply.access_token.is_empty() {
         // **Say WHICH refusal.** `invalid_grant` is the token itself being dead (single-use and
@@ -695,11 +727,8 @@ fn renew(stored: &Stored) -> Result<Stored, &'static str> {
     }
     // Some stacks rotate the refresh token and some hand back the same one; either way the value
     // to keep is the reply's when it sent one.
-    let next = if reply.refresh_token.is_empty() {
-        refresh.to_string()
-    } else {
-        reply.refresh_token
-    };
+    let next =
+        if reply.refresh_token.is_empty() { refresh.to_string() } else { reply.refresh_token };
     // PERSIST THE ROTATED TOKEN BEFORE THE EXCHANGE. DR's refresh tokens are single-use: if the
     // exchange below fails (a flaky network, DR briefly unhappy), the token we just used is spent,
     // and keeping only the old one on disk would leave the session permanently unrecoverable.
@@ -715,12 +744,15 @@ fn renew(stored: &Stored) -> Result<Stored, &'static str> {
     // every write this app makes names a profile (`api::set_watched`), so the cost is the wrong
     // person's viewing history. Re-seat the profile that was actually chosen, against the fresh
     // account token, through the same door the picker uses.
-    let Some(seat) = wants_reseat(stored) else { return Ok(fresh) };
+    let Some(seat) = wants_reseat(stored) else {
+        return Ok(fresh);
+    };
     let attempt = seat_from(fresh.clone(), &seat, &stored.segments);
     if let Err(why) = &attempt {
         crate::log(&format!(
             "dr-auth: a refresh could not re-seat profile {seat}: {} — on the account's default profile until the next picker",
-            why.why()));
+            why.why()
+        ));
     }
     Ok(refreshed_record(fresh, &stored.auto_profile_id, attempt))
 }
@@ -737,7 +769,11 @@ fn wants_reseat(previous: &Stored) -> Option<String> {
 /// `name` and a `profile` token must come out of the same exchange. The failure also leaves
 /// `profile_id` at 0, so the next boot's roster read re-seats (or shows the picker) instead of a
 /// stale id suppressing both.
-fn refreshed_record(fresh: Stored, previous_pin: &str, seat: Result<Stored, SeatRefusal>) -> Stored {
+fn refreshed_record(
+    fresh: Stored,
+    previous_pin: &str,
+    seat: Result<Stored, SeatRefusal>,
+) -> Stored {
     let mut record = match seat {
         Ok(seated) => seated,
         Err(_) => fresh,
@@ -891,12 +927,15 @@ mod tests {
 
     #[test]
     fn token_reply_parses_both_arms() {
-        let pending: TokenReply = serde_json::from_str(r#"{"error":"authorization_pending"}"#).unwrap();
+        let pending: TokenReply =
+            serde_json::from_str(r#"{"error":"authorization_pending"}"#).unwrap();
         assert_eq!(pending.error, "authorization_pending");
         assert!(pending.access_token.is_empty());
 
-        let ok: TokenReply =
-            serde_json::from_str(r#"{"access_token":"a.b.c","id_token":"d.e.f","refresh_token":"r"}"#).unwrap();
+        let ok: TokenReply = serde_json::from_str(
+            r#"{"access_token":"a.b.c","id_token":"d.e.f","refresh_token":"r"}"#,
+        )
+        .unwrap();
         assert_eq!(ok.access_token, "a.b.c");
         assert_eq!(ok.refresh_token, "r");
     }
@@ -942,8 +981,10 @@ mod tests {
             .expect("a roster");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "Kept");
-        assert!(parse_profiles(r#"{"data":[]}"#).is_none(),
-            "a shape this reader does not know is a failure to report, not a roster of none");
+        assert!(
+            parse_profiles(r#"{"data":[]}"#).is_none(),
+            "a shape this reader does not know is a failure to report, not a roster of none"
+        );
     }
 
     #[test]
@@ -1059,10 +1100,18 @@ mod tests {
     }
 
     fn record(profile_id: &str, name: &str) -> Stored {
-        Stored { oidc_refresh: "r".into(), account: "a".into(), profile: "p".into(),
-            session_id: "s".into(), user_id: "u".into(), expires_at: 10_000,
-            profile_id: profile_id.into(), name: name.into(),
-            segments: vec!["drtv".into(), "optedout".into()], auto_profile_id: String::new() }
+        Stored {
+            oidc_refresh: "r".into(),
+            account: "a".into(),
+            profile: "p".into(),
+            session_id: "s".into(),
+            user_id: "u".into(),
+            expires_at: 10_000,
+            profile_id: profile_id.into(),
+            name: name.into(),
+            segments: vec!["drtv".into(), "optedout".into()],
+            auto_profile_id: String::new(),
+        }
     }
 
     #[test]
@@ -1094,7 +1143,11 @@ mod tests {
         // holds the DEFAULT profile's token — a menu naming one person over another's credentials.
         let previous = record("6e56", "Loveless");
         let fresh = record("", "Default");
-        let left = refreshed_record(fresh.clone(), &previous.auto_profile_id, Err(SeatRefusal::Refused(403)));
+        let left = refreshed_record(
+            fresh.clone(),
+            &previous.auto_profile_id,
+            Err(SeatRefusal::Refused(403)),
+        );
         assert_eq!(left.profile_id, "", "a stale seat id must not suppress the next picker");
         assert_eq!(left.name, "Default", "the name and the token come from one exchange");
         assert_ne!(left.name, previous.name);

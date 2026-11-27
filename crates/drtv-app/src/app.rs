@@ -12,8 +12,9 @@ use egui::{Align, Layout, RichText, Stroke, Ui};
 use std::time::{Duration, Instant};
 
 use crate::images::ImageCache;
-use drtv_ui::theme::{self, ACCENT, BG, BORDER, SURFACE, TEXT, TEXT_DIM, TEXT_FAINT};
 use crate::worker::{Cmd, Msg, PollState, Workers};
+use drtv_ui::icons;
+use drtv_ui::theme::{self, ACCENT, BG, BORDER, SURFACE, TEXT, TEXT_DIM, TEXT_FAINT};
 
 /// Where the app is. `Detail` carries the id so a reload and a navigation are the same request.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -96,7 +97,8 @@ pub struct DrtvApp {
     pub(crate) playback: Option<Playback>,
     pub(crate) player: Option<drtv_player::VideoPlayer>,
     pub(crate) gl: Option<Arc<glow::Context>>,
-    pub(crate) loader: Option<Arc<dyn Fn(&std::ffi::CStr) -> *const std::ffi::c_void + Send + Sync>>,
+    pub(crate) loader:
+        Option<Arc<dyn Fn(&std::ffi::CStr) -> *const std::ffi::c_void + Send + Sync>>,
     /// Bumped on every navigation the screen should respond to; a message carrying an older
     /// generation belongs to a screen the viewer already left.
     pub(crate) generation: u64,
@@ -104,7 +106,9 @@ pub struct DrtvApp {
     pub(crate) fullscreen: bool,
     /// A fullscreen change to send once the frame has the context to send it with.
     pub(crate) pending_fullscreen: Option<bool>,
-    pub(crate) palette: bool,
+    /// Set by `DRTV_START=play:<id>`: open the title and start it as soon as its detail loads. A
+    /// smoke test needs a way past the mouse; nothing else sets this.
+    pub(crate) autoplay: bool,
     pub(crate) timeout: Duration,
 }
 
@@ -142,12 +146,27 @@ impl DrtvApp {
             toast: None,
             fullscreen: false,
             pending_fullscreen: None,
-            palette: false,
+            autoplay: false,
             timeout: Duration::from_secs(4),
         };
         app.load(Route::Home);
         if app.account.signed_in {
             let _ = app.workers.api().send(Cmd::Profiles);
+        }
+        if let Ok(start) = std::env::var("DRTV_START") {
+            if let Some(id) = start.strip_prefix("detail:") {
+                app.navigate(Route::Detail(id.to_string()));
+            } else if let Some(id) = start.strip_prefix("play:") {
+                app.autoplay = true;
+                app.navigate(Route::Detail(id.to_string()));
+            } else if start == "account" {
+                app.navigate(Route::Account);
+            } else if let Some(term) = start.strip_prefix("search:") {
+                app.navigate(Route::Search);
+                app.search.term = term.to_string();
+                app.search.focus = true;
+                app.load(Route::Search);
+            }
         }
         app
     }
@@ -227,15 +246,16 @@ impl eframe::App for DrtvApp {
             self.player_ui(ui);
         } else {
             self.top_bar(ui);
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(BG))
-                .show(ui, |ui| match self.route.clone() {
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(BG)).show(
+                ui,
+                |ui| match self.route.clone() {
                     Route::Home => self.home_ui(ui),
                     Route::Search => self.search_ui(ui),
                     Route::Detail(id) => self.detail_ui(ui, &id),
                     Route::Account => self.account_ui(ui),
                     Route::Player => {}
-                });
+                },
+            );
         }
 
         self.toast_ui(&ctx);
@@ -287,8 +307,17 @@ impl DrtvApp {
                         Ok(detail) => Load::Ready(detail),
                         Err(why) => Load::Failed(why),
                     };
+                    if self.autoplay
+                        && let Load::Ready(detail) = &self.detail
+                    {
+                        self.autoplay = false;
+                        if let Some(card) = crate::screens::detail::playable(detail) {
+                            self.play(card);
+                        }
+                    }
                 }
-                Msg::Stream { generation, result } if generation == self.generation => match result {
+                Msg::Stream { generation, result } if generation == self.generation => match result
+                {
                     Ok(stream) => self.start_playback(stream, ctx),
                     Err(why) => {
                         self.playback = None;
@@ -321,9 +350,7 @@ impl DrtvApp {
                         self.account.signed_in = true;
                         self.account.busy = true;
                         let _ = self.workers.api().send(Cmd::Profiles);
-                        let _ = self.workers.api().send(Cmd::Home {
-                            generation: self.generation,
-                        });
+                        let _ = self.workers.api().send(Cmd::Home { generation: self.generation });
                     }
                     PollState::Failed(why) => {
                         self.account.polling = false;
@@ -386,39 +413,31 @@ impl DrtvApp {
     fn top_bar(&mut self, ui: &mut Ui) {
         egui::Panel::top("nav")
             .exact_size(64.0)
-            .frame(
-                egui::Frame::NONE
-                    .fill(BG)
-                    .inner_margin(egui::Margin::symmetric(28, 0)),
-            )
+            .frame(egui::Frame::NONE.fill(BG).inner_margin(egui::Margin::symmetric(28, 0)))
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    let mark = ui.label(RichText::new("DRTV").font(theme::semibold(19.0)).color(ACCENT));
+                    let mark =
+                        ui.label(RichText::new("DRTV").font(theme::semibold(19.0)).color(ACCENT));
                     mark.on_hover_text("Uofficiel desktop-klient");
-                    ui.label(
-                        RichText::new("desktop")
-                            .font(theme::regular(13.0))
-                            .color(TEXT_FAINT),
-                    );
-                    ui.add_space(26.0);
+                    ui.label(RichText::new("desktop").font(theme::regular(13.0)).color(TEXT_FAINT));
+                    ui.add_space(22.0);
 
-                    for (label, route) in [
-                        ("Hjem", Route::Home),
-                        ("Søg", Route::Search),
-                    ] {
-                        if nav_item(ui, label, self.route == route).clicked() {
-                            self.navigate(route);
-                        }
-                    }
+                    // Back sits before the sections, where a browser puts it: after them it reads as
+                    // a fifth page.
                     if !self.history.is_empty() && self.route != Route::Home {
-                        if ui
-                            .add(egui::Button::new(
-                                RichText::new("← Tilbage").color(TEXT_DIM).size(13.0),
-                            ).frame(false))
+                        if icons::icon_button(ui, icons::Icon::Back, 26.0, TEXT_DIM)
+                            .on_hover_text("Tilbage")
                             .clicked()
                         {
                             self.back();
+                        }
+                        ui.add_space(10.0);
+                    }
+
+                    for (label, route) in [("Hjem", Route::Home), ("Søg", Route::Search)] {
+                        if nav_item(ui, label, self.route == route).clicked() {
+                            self.navigate(route);
                         }
                     }
 
@@ -435,9 +454,6 @@ impl DrtvApp {
                         let active = self.route == Route::Account;
                         if nav_item(ui, &label, active).clicked() {
                             self.navigate(Route::Account);
-                        }
-                        if self.palette {
-                            ui.label(RichText::new("⌘K").color(TEXT_FAINT).size(12.0));
                         }
                     });
                 });
@@ -513,9 +529,7 @@ impl DrtvApp {
 /// A nav label: dim until it is the current page, with a red rule under the word when it is.
 fn nav_item(ui: &mut Ui, label: &str, active: bool) -> egui::Response {
     let font = theme::semibold(14.0);
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), font, TEXT);
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, TEXT);
     let size = egui::vec2(galley.size().x + 8.0, 32.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let color = if active {

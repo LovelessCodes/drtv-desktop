@@ -96,19 +96,35 @@ impl Card {
     /// The line under the title on a tile: `"S5:E31"` for an episode, the year for a film, the
     /// number of seasons for a show.
     pub fn kicker(&self) -> String {
+        let numbered = self.season > 0 && self.episode > 0;
         match self.kind() {
-            Kind::Episode => self
-                .label
-                .clone()
-                .or_else(|| {
-                    (self.season > 0 && self.episode > 0)
-                        .then(|| format!("S{}:E{}", self.season, self.episode))
-                })
-                .unwrap_or_default(),
+            // **The numbers, not DR's label.** `PlayButtonExtraDetails` reads "S2026:E17 Klar! Læg an!
+            // Skyd!" — the label repeats the episode's own title, and a kicker that repeats the line
+            // above it is noise. The numbers are the part a viewer scans for.
+            Kind::Episode if numbered => format!("S{}:E{}", self.season, self.episode),
+            Kind::Episode => short_label(self.label.as_deref()),
             Kind::Season if self.season > 0 => format!("Sæson {}", self.season),
             _ => self.year.map(|y| y.to_string()).unwrap_or_default(),
         }
     }
+}
+
+/// The leading "S5:E31" of DR's label, when the numbering fields did not arrive.
+fn short_label(label: Option<&str>) -> String {
+    let Some(label) = label else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for (i, c) in label.char_indices() {
+        if i == 0 && c != 'S' {
+            break;
+        }
+        if i > 0 && !(c.is_ascii_digit() || matches!(c, 'S' | 'E' | ':')) {
+            break;
+        }
+        out.push(c);
+    }
+    if out.contains(":E") { out } else { String::new() }
 }
 
 /// Map one DR item. `watch` is the signed-in profile's history for that item, when there is one.
@@ -177,6 +193,9 @@ pub struct Shelf {
     pub id: String,
     pub title: String,
     pub items: Vec<Card>,
+    /// The entry named a list instead of carrying items, and that list has not been fetched yet.
+    /// Distinct from "carried items that were all filtered out", which must not be re-requested.
+    pub pending: bool,
 }
 
 /// The whole front page, in DR's own order.
@@ -187,29 +206,39 @@ pub fn shelves(page: &api::Page, watches: &BTreeMap<String, Watch>) -> Vec<Shelf
         // fetch. `items` is filled in later for the second kind.
         let source = entry.list.as_ref();
         let items: Vec<Card> = source
-            .map(|list| list.items.iter().map(|i| card(i, watches.get(&i.id))).collect())
+            .map(|list| {
+                list.items
+                    .iter()
+                    .filter(|item| wants_tile(item))
+                    .map(|i| card(i, watches.get(&i.id)))
+                    .collect()
+            })
             .unwrap_or_default();
-        let title = if entry.title.is_empty() {
-            source.map(|list| list.title.clone()).unwrap_or_default()
-        } else {
-            entry.title.clone()
-        };
+        // **The entry's own title, never the list's.** A list's title is CMS copy — "DRTV Hero Monday
+        // 06.00", "Top text links + Jul (2)" — and a shelf with no title is a hand-picked row that DR
+        // itself draws without a heading.
+        let title = entry.title.clone();
         let id = source.map(|l| l.id.clone()).unwrap_or_else(|| entry.title.clone());
-        if title.is_empty() && items.is_empty() {
+        let pending = source.is_some_and(|list| list.items.is_empty());
+        if title.is_empty() && items.is_empty() && !pending {
             continue;
         }
-        shelves.push(Shelf { id, title, items });
+        shelves.push(Shelf { id, title, items, pending });
     }
     shelves
 }
 
+/// Whether an item belongs on a poster shelf. DR mixes editorial entries into a list — `link` rows
+/// are 16:9 category buttons with a marketing image and no runtime — and a link cropped into a 2:3
+/// tile is a white smear. An item that simply lacks art still gets a tile: the placeholder draws its
+/// initial, which is better than silently losing a title DR chose to show.
+fn wants_tile(item: &api::Item) -> bool {
+    matches!(item.kind.as_str(), "movie" | "program" | "show" | "series" | "season" | "episode")
+}
+
 /// The ids of the shelves that name a list must be fetched with `/lists?ids=…`.
 pub fn pending_list_ids(shelves: &[Shelf]) -> Vec<String> {
-    shelves
-        .iter()
-        .filter(|s| s.items.is_empty() && is_numeric_list(&s.id))
-        .map(|s| s.id.clone())
-        .collect()
+    shelves.iter().filter(|s| s.pending && is_numeric_list(&s.id)).map(|s| s.id.clone()).collect()
 }
 
 fn is_numeric_list(id: &str) -> bool {
@@ -217,14 +246,21 @@ fn is_numeric_list(id: &str) -> bool {
 }
 
 /// Fill shelf items from a `/lists` reply, matching on list id.
-pub fn fill_lists(shelves: &mut Vec<Shelf>, lists: &[api::List], watches: &BTreeMap<String, Watch>) {
+pub fn fill_lists(
+    shelves: &mut Vec<Shelf>,
+    lists: &[api::List],
+    watches: &BTreeMap<String, Watch>,
+) {
     for list in lists {
-        let items: Vec<Card> = list.items.iter().map(|i| card(i, watches.get(&i.id))).collect();
+        let items: Vec<Card> = list
+            .items
+            .iter()
+            .filter(|item| wants_tile(item))
+            .map(|i| card(i, watches.get(&i.id)))
+            .collect();
         for shelf in shelves.iter_mut().filter(|s| s.id == list.id) {
             shelf.items = items.clone();
-            if shelf.title.is_empty() && !list.title.is_empty() {
-                shelf.title = list.title.clone();
-            }
+            shelf.pending = false;
         }
     }
     shelves.retain(|s| !s.items.is_empty());
@@ -241,17 +277,14 @@ pub struct Detail {
 }
 
 pub fn detail(item: &Item, watches: &BTreeMap<String, Watch>) -> Detail {
-    let mut seasons: Vec<Card> = item.seasons.items.iter().map(|i| card(i, watches.get(&i.id))).collect();
+    let mut seasons: Vec<Card> =
+        item.seasons.items.iter().map(|i| card(i, watches.get(&i.id))).collect();
     seasons.sort_by_key(|c| c.season);
-    let mut episodes: Vec<Card> = item.episodes.items.iter().map(|i| card(i, watches.get(&i.id))).collect();
+    let mut episodes: Vec<Card> =
+        item.episodes.items.iter().map(|i| card(i, watches.get(&i.id))).collect();
     episodes.sort_by_key(|c| c.episode);
     let card = card(item, watches.get(&item.id));
-    Detail {
-        selected_season: card.season,
-        card,
-        seasons,
-        episodes,
-    }
+    Detail { selected_season: card.season, card, seasons, episodes }
 }
 
 /// DR's own episode label carries the two numbers a tile and the detail page walk by: `"S5:E31 …"`,
@@ -272,7 +305,8 @@ pub fn numbering(item: &Item) -> (i64, i64) {
             // The fields win over the label: they are the item's own, the label is copy DR prints
             // for its play button. A daily show's `seasonNumber` is the year (2026), which the label
             // also spells, so the two agree where both exist.
-            let episode = if item.episode_number > 0 { item.episode_number } else { labelled_episode };
+            let episode =
+                if item.episode_number > 0 { item.episode_number } else { labelled_episode };
             let season = if item.season_number > 0 { item.season_number } else { labelled_season };
             (episode, season)
         }
@@ -358,7 +392,8 @@ mod tests {
         assert_eq!(c.resume_ms, 250_000);
         assert!((c.progress() - 0.25).abs() < f32::EPSILON);
         // A fully watched item reports no resume point; DR leaves `position` behind.
-        let done: Watch = serde_json::from_str(r#"{"position":900,"isFullyWatched":true}"#).expect("watch");
+        let done: Watch =
+            serde_json::from_str(r#"{"position":900,"isFullyWatched":true}"#).expect("watch");
         let c = card(&i, Some(&done));
         assert_eq!(c.resume_ms, 0);
         assert!(c.watched);
@@ -382,9 +417,10 @@ mod tests {
         .expect("page");
         let mut shelves = shelves(&page, &BTreeMap::new());
         assert_eq!(pending_list_ids(&shelves), vec!["111".to_string()]);
-        let lists: Vec<api::List> =
-            serde_json::from_str(r#"[{"id":"111","items":[{"id":"7","type":"program","title":"Z"}]}]"#)
-                .expect("lists");
+        let lists: Vec<api::List> = serde_json::from_str(
+            r#"[{"id":"111","items":[{"id":"7","type":"program","title":"Z"}]}]"#,
+        )
+        .expect("lists");
         fill_lists(&mut shelves, &lists, &BTreeMap::new());
         let fetched = shelves.iter().find(|s| s.id == "111").expect("shelf");
         assert_eq!(fetched.items.len(), 1);
@@ -394,9 +430,10 @@ mod tests {
 
     #[test]
     fn an_empty_list_is_dropped_rather_than_drawn_as_a_heading() {
-        let page: api::Page =
-            serde_json::from_str(r#"{"entries":[{"type":"list","title":"Tom","list":{"id":"333"}}]}"#)
-                .expect("page");
+        let page: api::Page = serde_json::from_str(
+            r#"{"entries":[{"type":"list","title":"Tom","list":{"id":"333"}}]}"#,
+        )
+        .expect("page");
         let mut shelves = shelves(&page, &BTreeMap::new());
         fill_lists(&mut shelves, &[], &BTreeMap::new());
         assert!(shelves.is_empty());
