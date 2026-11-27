@@ -1,0 +1,58 @@
+[workspace]
+members = [
+    "crates/drtv-net",
+    "crates/drtv-api",
+    "crates/drtv-player",
+    "crates/drtv-ui",
+    "crates/drtv-app",
+    "crates/drtv-desktop",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/LovelessCodes/drtv-desktop"
+publish = false
+
+[workspace.dependencies]
+drtv-api = { path = "crates/drtv-api" }
+drtv-app = { path = "crates/drtv-app" }
+drtv-desktop = { path = "crates/drtv-desktop" }
+drtv-net = { path = "crates/drtv-net" }
+drtv-player = { path = "crates/drtv-player" }
+drtv-ui = { path = "crates/drtv-ui" }
+
+eframe = { version = "0.37", default-features = false, features = [
+    "glow",
+    "default_fonts",
+    "wayland",
+    "x11",
+] }
+egui = "0.37"
+egui_glow = "0.37"
+glow = "0.17"
+
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+libmpv2 = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "3.5", default-features = false, features = [
+    "gzip",
+    "platform-verifier",
+    "rustls",
+] }
+webbrowser = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"
+
+[profile.dev.package."*"]
+opt-level = 2

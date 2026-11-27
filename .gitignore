@@ -1,0 +1,6 @@
+/target
+*.dSYM
+.DS_Store
+
+# Vendored player runtime, fetched by xtask rather than committed.
+/vendor/
