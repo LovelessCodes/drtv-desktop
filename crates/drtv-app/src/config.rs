@@ -15,6 +15,29 @@ pub fn session_path() -> PathBuf {
     data_dir().join("session.json")
 }
 
+/// The typeface libmpv needs on disk to draw subtitles in.
+///
+/// egui gets its fonts compiled into the binary; mpv can only be told about a directory, so the
+/// same Inter files are written out once — the first time the player is created — and reused. A
+/// failure here is not fatal: mpv falls back to its own font and the subtitles still read.
+pub fn fonts_dir() -> Option<PathBuf> {
+    let dir = data_dir().join("fonts");
+    std::fs::create_dir_all(&dir).ok()?;
+    for (name, bytes) in [
+        ("Inter-Regular.ttf", drtv_ui::FONT_REGULAR),
+        ("Inter-Medium.ttf", drtv_ui::FONT_MEDIUM),
+        ("Inter-SemiBold.ttf", drtv_ui::FONT_SEMIBOLD),
+    ] {
+        let path = dir.join(name);
+        // Rewritten only when missing or truncated, so a normal launch does no I/O here.
+        let current = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if current != bytes.len() as u64 {
+            std::fs::write(&path, bytes).ok()?;
+        }
+    }
+    Some(dir)
+}
+
 /// Log to stderr, and to `RUST_LOG`'s rules. `drtv_app=debug` shows screen and request chatter;
 /// the default is warnings only, so a release build is silent.
 pub fn init_tracing() {

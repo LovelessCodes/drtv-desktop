@@ -321,7 +321,17 @@ impl DrtvApp {
         self.menu_panel(ui, rect);
     }
 
-    fn toggle_menu(&mut self, menu: Menu) {
+    /// Mute from the keyboard. The HUD's icon and this are the same rule: flip the flag, leave the
+    /// slider where the viewer put it.
+    pub(crate) fn toggle_mute(&mut self) {
+        if let Some(player) = &self.player {
+            let muted = player.muted();
+            player.set_muted(!muted);
+        }
+        self.wake_hud();
+    }
+
+    pub(crate) fn toggle_menu(&mut self, menu: Menu) {
         if let Some(playback) = self.playback.as_mut() {
             playback.menu = if playback.menu == Some(menu) { None } else { Some(menu) };
         }
@@ -450,7 +460,13 @@ impl DrtvApp {
                 return;
             };
             let wake = ctx.clone();
-            match drtv_player::VideoPlayer::new(gl, loader, move || wake.request_repaint()) {
+            let fonts = crate::config::fonts_dir();
+            match drtv_player::VideoPlayer::with_fonts(
+                gl,
+                loader,
+                move || wake.request_repaint(),
+                fonts.as_deref(),
+            ) {
                 Ok(player) => self.player = Some(player),
                 Err(error) => {
                     self.toast(format!("Afspilleren kunne ikke starte: {error}"));

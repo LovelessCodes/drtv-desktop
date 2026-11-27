@@ -146,6 +146,20 @@ impl VideoPlayer {
         get_proc_address: Arc<dyn Fn(&CStr) -> *const c_void + Send + Sync>,
         repaint: impl Fn() + Send + 'static,
     ) -> Result<Self, PlayerError> {
+        Self::with_fonts(gl, get_proc_address, repaint, None)
+    }
+
+    /// The same player, told where the app's own typeface lives.
+    ///
+    /// mpv renders subtitles itself, with its own font lookup, which on a bare machine resolves to a
+    /// serif that has nothing to do with this app. Pointing it at the Inter files the UI already
+    /// carries keeps a line of dialogue looking like it belongs to the same product.
+    pub fn with_fonts(
+        gl: Arc<glow::Context>,
+        get_proc_address: Arc<dyn Fn(&CStr) -> *const c_void + Send + Sync>,
+        repaint: impl Fn() + Send + 'static,
+        fonts_dir: Option<&std::path::Path>,
+    ) -> Result<Self, PlayerError> {
         let mpv = Mpv::with_initializer(|init| {
             // `vo=libmpv` is what makes mpv hand us frames instead of opening its own window.
             init.set_property("vo", "libmpv")?;
@@ -163,6 +177,18 @@ impl VideoPlayer {
             // A/V sync: with the render API the video is presented by us, so mpv must not add its
             // own display delay on top.
             init.set_property("video-timing-offset", 0.0)?;
+            // **Danish first, on purpose.** mpv's own defaults are English (`slang=en,eng`), so a
+            // DR title with one Danish subtitle track and no language match arrives with nothing
+            // selected — the menu offered "Dansk" while the screen showed none. Every title this
+            // client can reach is a Danish broadcast; the menu can still turn them off.
+            init.set_property("slang", "da,dan")?;
+            init.set_property("alang", "da,dan")?;
+            // Sit the subtitles clear of the HUD rather than on the last row of pixels.
+            init.set_property("sub-pos", 94.0)?;
+            if let Some(dir) = fonts_dir {
+                init.set_property("sub-fonts-dir", dir.to_string_lossy().to_string())?;
+                init.set_property("sub-font", "Inter")?;
+            }
             Ok(())
         })?;
 

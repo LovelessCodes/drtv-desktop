@@ -527,6 +527,17 @@ impl DrtvApp {
                     self.fullscreen = !self.fullscreen;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
                 }
+                // The track menus are the one part of the HUD with no keyboard of its own; a viewer
+                // watching with the pointer parked should not have to find a 16-point icon.
+                if i.key_pressed(egui::Key::S) {
+                    self.toggle_menu(Menu::Subtitles);
+                }
+                if i.key_pressed(egui::Key::A) {
+                    self.toggle_menu(Menu::Audio);
+                }
+                if i.key_pressed(egui::Key::M) {
+                    self.toggle_mute();
+                }
             }
         });
     }

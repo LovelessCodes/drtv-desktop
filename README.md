@@ -71,6 +71,19 @@ rewriting every install name to `@rpath/…` and re-signing ad hoc. The result r
 has never had Homebrew installed. Windows and Linux packaging is not written yet; the app builds and
 runs there against a system or vendored libmpv.
 
+## Keys
+
+| Key | Does |
+| --- | --- |
+| `/` or `⌘K` | Search, from anywhere |
+| `Esc` | Back — leaves the player as well |
+| `Space` | Play/pause |
+| `←` `→` | Ten seconds back, ten seconds forward |
+| `F` | Fullscreen |
+| `S` | Subtitle tracks |
+| `A` | Audio tracks |
+| `M` | Mute |
+
 ## Layout
 
 | Crate | What lives there |
