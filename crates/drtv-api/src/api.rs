@@ -372,9 +372,9 @@ struct AccountList {
     items: Vec<Item>,
 }
 
-/// One of the profile's own lists. `path` is the name DR uses in the front page's entry ids
-/// (`ContinueWatching`, `Bookmarks`), which is also what the URL calls it.
-fn account_list(profile_token: &str, path: &str) -> Vec<Item> {
+/// One of the profile's own lists. `path` is the URL half of the name DR uses in the front page's
+/// entry ids (`continue-watching` for `ContinueWatching`) — see [`crate::card::user_list_path`].
+pub fn user_list(profile_token: &str, path: &str) -> Vec<Item> {
     if profile_token.is_empty() {
         return Vec::new();
     }
@@ -395,12 +395,12 @@ fn account_list(profile_token: &str, path: &str) -> Vec<Item> {
 
 /// "Se videre" — what the profile has started and not finished, most recent first.
 pub fn continue_watching(profile_token: &str) -> Vec<Item> {
-    account_list(profile_token, "continue-watching")
+    user_list(profile_token, "continue-watching")
 }
 
 /// "Min liste" — the profile's bookmarks.
 pub fn bookmarks(profile_token: &str) -> Vec<Item> {
-    account_list(profile_token, "bookmarks")
+    user_list(profile_token, "bookmarks")
 }
 
 /// How many episodes a season has, from the season's own item. `0` when DR will not say.

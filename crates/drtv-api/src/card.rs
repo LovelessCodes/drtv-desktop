@@ -245,6 +245,53 @@ fn is_numeric_list(id: &str) -> bool {
     !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// The shelves that name one of the **profile's own** lists.
+///
+/// `Se videre` and `Min liste` head the front page for a viewer those lists could have content for,
+/// and DR answers them from `/account/profile/<path>/list`, not from `/lists`: the entry carries an
+/// id (`ContinueWatching`, `Bookmarks`) that `/lists` answers 404 for. Asking the CMS for them was
+/// why the two rows a viewer most expects were the two rows they never saw.
+pub fn pending_user_lists(shelves: &[Shelf]) -> Vec<String> {
+    shelves
+        .iter()
+        .filter(|s| s.pending && user_list_path(&s.id).is_some())
+        .map(|s| s.id.clone())
+        .collect()
+}
+
+/// The `path` segment DR's account endpoint uses for a front-page entry id, or `None` when the id
+/// is not one of the profile's own lists.
+pub fn user_list_path(id: &str) -> Option<&'static str> {
+    match id.to_ascii_lowercase().as_str() {
+        "continuewatching" => Some("continue-watching"),
+        "bookmarks" => Some("bookmarks"),
+        _ => None,
+    }
+}
+
+/// Fill the profile's own lists, keyed by front-page entry id, and stop calling them pending.
+pub fn fill_user_lists(
+    shelves: &mut [Shelf],
+    items: &BTreeMap<String, Vec<api::Item>>,
+    watches: &BTreeMap<String, Watch>,
+) {
+    for shelf in shelves.iter_mut().filter(|s| user_list_path(&s.id).is_some()) {
+        let Some(rows) = items.get(&shelf.id) else {
+            continue;
+        };
+        shelf.items =
+            rows.iter().filter(|i| wants_tile(i)).map(|i| card(i, watches.get(&i.id))).collect();
+        shelf.pending = false;
+    }
+}
+
+/// Drop every shelf with nothing on it. A heading with no tiles under it is a promise the page
+/// cannot keep — but a list that legitimately has no items yet (`Min liste` before the first
+/// bookmark) must be dropped only AFTER it was asked, which is what "no longer pending" means.
+pub fn drop_empty(shelves: &mut Vec<Shelf>) {
+    shelves.retain(|s| !s.items.is_empty());
+}
+
 /// Fill shelf items from a `/lists` reply, matching on list id.
 pub fn fill_lists(
     shelves: &mut Vec<Shelf>,
@@ -263,7 +310,7 @@ pub fn fill_lists(
             shelf.pending = false;
         }
     }
-    shelves.retain(|s| !s.items.is_empty());
+    drop_empty(shelves);
 }
 
 /// Everything a detail page needs, from one expanded item read.
@@ -426,6 +473,55 @@ mod tests {
         assert_eq!(fetched.items.len(), 1);
         assert_eq!(fetched.items[0].title, "Z");
         assert!(pending_list_ids(&shelves).is_empty());
+    }
+
+    #[test]
+    fn the_profiles_own_lists_are_asked_for_by_their_own_names() {
+        let page: api::Page = serde_json::from_str(
+            r#"{"entries":[
+                 {"type":"user","title":"Se videre","list":{"id":"ContinueWatching"}},
+                 {"type":"user","title":"Min liste","list":{"id":"Bookmarks"}},
+                 {"type":"list","title":"Nye programmer","list":{"id":"559086"}}
+               ]}"#,
+        )
+        .expect("page");
+        let shelves = shelves(&page, &BTreeMap::new());
+        // A `user` entry is not a CMS list: `/lists?ids=ContinueWatching` answers 404.
+        assert_eq!(pending_list_ids(&shelves), vec!["559086".to_string()]);
+        assert_eq!(
+            pending_user_lists(&shelves),
+            vec!["ContinueWatching".to_string(), "Bookmarks".to_string()]
+        );
+        assert_eq!(user_list_path("ContinueWatching"), Some("continue-watching"));
+        assert_eq!(user_list_path("bookmarks"), Some("bookmarks"));
+        assert_eq!(user_list_path("559086"), None);
+    }
+
+    #[test]
+    fn a_filled_se_videre_keeps_its_place_and_an_empty_min_liste_disappears() {
+        let page: api::Page = serde_json::from_str(
+            r#"{"entries":[
+                 {"type":"user","title":"Se videre","list":{"id":"ContinueWatching"}},
+                 {"type":"user","title":"Min liste","list":{"id":"Bookmarks"}},
+                 {"type":"list","title":"Nye programmer","list":{"id":"559086","items":[{"id":"1","type":"program","title":"A"}]}}
+               ]}"#,
+        )
+        .expect("page");
+        let mut shelves = shelves(&page, &BTreeMap::new());
+        let watched: Vec<api::Item> = serde_json::from_str(
+            r#"[{"id":"42","type":"episode","title":"Slægten skal føres videre"}]"#,
+        )
+        .expect("items");
+        let owned = BTreeMap::from([
+            ("ContinueWatching".to_string(), watched),
+            ("Bookmarks".to_string(), Vec::new()),
+        ]);
+        fill_user_lists(&mut shelves, &owned, &BTreeMap::new());
+        drop_empty(&mut shelves);
+        let titles: Vec<&str> = shelves.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, vec!["Se videre", "Nye programmer"], "DR's order, minus the empty list");
+        assert_eq!(shelves[0].items[0].title, "Slægten skal føres videre");
+        assert!(pending_user_lists(&shelves).is_empty(), "asked once, never again");
     }
 
     #[test]

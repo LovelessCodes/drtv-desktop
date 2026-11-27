@@ -217,11 +217,24 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                 });
             };
             let mut shelves = card::shelves(&page, &watches);
+            // `Se videre` and `Min liste` are the profile's own, and live behind a different
+            // endpoint from the CMS lists: an empty token answers nothing without a request.
+            let profile = token(&stored);
+            let owned: std::collections::BTreeMap<String, Vec<api::Item>> =
+                card::pending_user_lists(&shelves)
+                    .into_iter()
+                    .filter_map(|id| {
+                        let path = card::user_list_path(&id)?;
+                        Some((id, api::user_list(&profile, path)))
+                    })
+                    .collect();
+            card::fill_user_lists(&mut shelves, &owned, &watches);
             let pending = card::pending_list_ids(&shelves);
             if !pending.is_empty() {
                 let lists = api::lists(&pending, &universe);
                 card::fill_lists(&mut shelves, &lists, &watches);
             }
+            card::drop_empty(&mut shelves);
             Some(Msg::Home { generation, result: Ok(shelves) })
         }
 
