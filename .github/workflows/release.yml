@@ -184,8 +184,10 @@ jobs:
           $tag = '${{ inputs.tag || github.ref_name }}'
           $name = "DRTV-$($tag -replace '^v','')-windows-x86_64"
           Compress-Archive -Path 'target\drtv-desktop-windows' -DestinationPath "$name.zip"
-          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" |
-            Set-Content "$name.zip.sha256" -Encoding ascii
+          # Written with LF, because a checksum file with CRLF in it names a file that is one
+          # character longer than the one on disk, and `sha256sum -c` on Linux then finds nothing.
+          $sum = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$PWD\$name.zip.sha256", "$sum  $name.zip`n")
           "NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - uses: actions/upload-artifact@v7
