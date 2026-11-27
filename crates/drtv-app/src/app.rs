@@ -501,8 +501,14 @@ impl DrtvApp {
             if typing {
                 return;
             }
-            if i.modifiers.command && i.key_pressed(egui::Key::K) {
-                self.route = Route::Search;
+            // **Any of the three.** Which modifier bit arrives for ⌘K depends on the backend and on
+            // what sits between the keyboard and the app — a remote desktop session or a keyboard
+            // layout can deliver it as `mac_cmd` or as `ctrl`, and a shortcut that works only under
+            // one of them is a shortcut that does not work. `/` is the same action without a
+            // modifier, for anyone who never finds out.
+            let command = i.modifiers.command || i.modifiers.mac_cmd || i.modifiers.ctrl;
+            if command && i.key_pressed(egui::Key::K) || i.key_pressed(egui::Key::Slash) {
+                self.navigate(Route::Search);
                 self.search.focus = true;
             }
             if self.route == Route::Player {

@@ -24,6 +24,7 @@ impl DrtvApp {
             ui.add_space(16.0);
 
             let mut opened: Option<Card> = None;
+            let blank = self.search.term.trim().is_empty();
             match &self.search.load {
                 Load::Loading => {
                     if !self.search.term.trim().is_empty() {
@@ -35,6 +36,11 @@ impl DrtvApp {
                 Load::Failed(why) => {
                     let why = why.clone();
                     widgets::empty(ui, "Søgningen fejlede", &why);
+                }
+                // An empty term is not a search that found nothing; saying so before the first
+                // keystroke is a small lie the screen tells every time it opens.
+                Load::Ready(_) if blank => {
+                    hint(ui, "Søg i hele DRTV — film, serier og dokumentarer.");
                 }
                 Load::Ready(shelves) if shelves.is_empty() => {
                     hint(ui, "Ingen resultater. Prøv et andet ord.");

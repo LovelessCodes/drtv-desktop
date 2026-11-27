@@ -195,7 +195,8 @@ fn tooltip(ui: &mut Ui, card: &Card) {
     if !length.is_empty() {
         meta.push(length);
     }
-    meta.extend(card.genres.iter().take(2).cloned());
+    // DR files everything it has no genre for under "ukendt"; a tooltip that says so is noise.
+    meta.extend(card.genres.iter().filter(|g| !g.eq_ignore_ascii_case("ukendt")).take(2).cloned());
     if !meta.is_empty() {
         ui.label(RichText::new(meta.join(" · ")).color(TEXT_DIM).size(12.0));
     }
