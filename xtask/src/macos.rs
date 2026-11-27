@@ -74,10 +74,15 @@ pub fn bundle(root: &Path) -> Result<(), String> {
     }
 
     // Ad hoc, but a signature nonetheless: an arm64 dylib without one is not loaded at all.
-    run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&executable))?;
+    //
+    // Inside out, libraries before the executable: signing the executable validates the nested code
+    // under `Contents/Frameworks` first, and an unsigned library there is refused with "code object
+    // is not signed at all" — a failure that depends on which macOS the build runs on, which is
+    // exactly the kind of thing that should not decide whether a release builds.
     for name in closure.keys() {
         run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(frameworks.join(name)))?;
     }
+    run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&executable))?;
     run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&app))?;
 
     println!("\n{}", app.display());

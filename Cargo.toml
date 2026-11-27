@@ -21,7 +21,6 @@ publish = false
 [workspace.dependencies]
 drtv-api = { path = "crates/drtv-api" }
 drtv-app = { path = "crates/drtv-app" }
-drtv-desktop = { path = "crates/drtv-desktop" }
 drtv-net = { path = "crates/drtv-net" }
 drtv-player = { path = "crates/drtv-player" }
 drtv-ui = { path = "crates/drtv-ui" }
@@ -33,7 +32,6 @@ eframe = { version = "0.37", default-features = false, features = [
     "x11",
 ] }
 egui = "0.37"
-egui_glow = "0.37"
 glow = "0.17"
 
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
