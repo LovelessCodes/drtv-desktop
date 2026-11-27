@@ -43,7 +43,6 @@ pub enum Cmd {
     },
     PollSignIn {
         code: auth::DeviceCode,
-        interval: u64,
         generation: u64,
     },
     Profiles,
@@ -316,8 +315,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
             result: auth::start().ok_or_else(|| "DR svarede ikke på login".to_string()),
         }),
 
-        Cmd::PollSignIn { code, interval, generation } => {
-            std::thread::sleep(std::time::Duration::from_secs(interval.max(1)));
+        Cmd::PollSignIn { code, generation } => {
             let state = match auth::poll(&code) {
                 auth::Poll::Pending => PollState::Pending,
                 auth::Poll::SlowDown => PollState::Pending,
@@ -335,6 +333,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                     }
                 }
             };
+            tracing::debug!("sign-in poll: {state:?}");
             Some(Msg::SignInPoll { generation, state })
         }
 

@@ -56,6 +56,9 @@ pub struct AccountState {
     pub signed_in: bool,
     pub profile_name: String,
     pub code: Option<auth::DeviceCode>,
+    /// When the next poll is due. The polling itself is timed here, on the UI thread, so a wait
+    /// that can last ten minutes does not occupy a request thread for all of it.
+    pub poll_due: Option<Instant>,
     pub polling: bool,
     pub error: Option<String>,
     pub profiles: Option<Vec<auth::Profile>>,
@@ -139,6 +142,7 @@ impl DrtvApp {
                 signed_in: stored.is_some(),
                 profile_name: String::new(),
                 code: None,
+                poll_due: None,
                 polling: false,
                 error: None,
                 profiles: None,
@@ -176,6 +180,25 @@ impl DrtvApp {
             }
         }
         app
+    }
+
+    /// Send the device flow's next poll when it is due.
+    ///
+    /// Deliberately not the account screen's job: the code lives for ten minutes, the viewer has to
+    /// leave the app to approve it, and they will very reasonably browse while they do. The wait is
+    /// timed here so a poll sleeps on no thread at all.
+    pub(crate) fn poll_sign_in(&mut self) {
+        let Some(code) = self.account.code.clone().filter(|_| self.account.polling) else {
+            return;
+        };
+        match self.account.poll_due {
+            Some(due) if Instant::now() < due => return,
+            Some(_) => {}
+            None => return,
+        }
+        // One poll in flight at a time: the reply is what schedules the next one.
+        self.account.poll_due = None;
+        let _ = self.workers.api().send(Cmd::PollSignIn { code, generation: self.generation });
     }
 
     /// Put this machine's own positions onto a freshly loaded detail page.
@@ -266,6 +289,12 @@ impl eframe::App for DrtvApp {
         }
         self.drain(&ctx);
         self.shortcuts(&ctx);
+        self.poll_sign_in();
+        if self.account.polling {
+            // The screen may be idle (a spinner is not drawn once the viewer leaves it), and a poll
+            // that only runs when something else repaints is a poll that never runs.
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
 
         // The player owns the window while it is open: no bar, no page margins, no theme chrome.
         if self.route == Route::Player {
@@ -383,6 +412,10 @@ impl DrtvApp {
                     self.account.busy = false;
                     match result {
                         Ok(code) => {
+                            // The first poll is due after the interval DR asked for, not at once:
+                            // an immediate poll can only answer "pending".
+                            let interval = Duration::from_secs(code.interval.max(5));
+                            self.account.poll_due = Some(Instant::now() + interval);
                             self.account.code = Some(code);
                             self.account.error = None;
                             self.account.polling = true;
@@ -391,8 +424,17 @@ impl DrtvApp {
                     }
                 }
                 Msg::SignInPoll { state, .. } => match state {
-                    PollState::Pending => {}
+                    PollState::Pending => {
+                        let interval = self
+                            .account
+                            .code
+                            .as_ref()
+                            .map(|code| Duration::from_secs(code.interval.max(5)))
+                            .unwrap_or(Duration::from_secs(5));
+                        self.account.poll_due = Some(Instant::now() + interval);
+                    }
                     PollState::Approved => {
+                        self.account.poll_due = None;
                         self.account.polling = false;
                         self.account.code = None;
                         self.account.signed_in = true;
@@ -401,6 +443,7 @@ impl DrtvApp {
                         let _ = self.workers.api().send(Cmd::Home { generation: self.generation });
                     }
                     PollState::Failed(why) => {
+                        self.account.poll_due = None;
                         self.account.polling = false;
                         self.account.code = None;
                         self.account.error = Some(why);
