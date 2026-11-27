@@ -165,13 +165,6 @@ impl DrtvApp {
                     }
                     Some(Action::Play(card)) => self.play(card),
                     Some(Action::Restart(card)) => self.play_from(card, 0.0),
-                    Some(Action::PlayShow) => {
-                        if let Load::Ready(detail) = &self.detail
-                            && let Some(card) = playable(detail)
-                        {
-                            self.play(card);
-                        }
-                    }
                     None => {}
                 }
             }
@@ -216,7 +209,6 @@ impl DrtvApp {
 enum Action {
     Open(String),
     Play(Card),
-    PlayShow,
     /// Play this item from the beginning, ignoring DR's resume point.
     Restart(Card),
 }
@@ -334,20 +326,24 @@ fn hero(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 let target = playable(detail);
+                // A show that arrives with only its seasons has nothing to play yet: the button
+                // opens the season instead of pretending, and a series with neither is not offered
+                // as watchable at all.
                 let (label, icon) = if target.as_ref().is_some_and(|c| c.resume_ms > 0) {
                     ("Fortsæt", icons::Icon::Play)
-                } else if detail.seasons.is_empty() {
+                } else if target.is_some() {
                     ("Afspil", icons::Icon::Play)
+                } else if !detail.seasons.is_empty() {
+                    ("Se sæsoner", icons::Icon::ChevronRight)
                 } else {
-                    ("Start forfra", icons::Icon::Play)
+                    ("", icons::Icon::Play)
                 };
-                if widgets::primary_button(ui, label, Some(icon)).clicked() {
+                if !label.is_empty() && widgets::primary_button(ui, label, Some(icon)).clicked() {
                     *action = match target {
-                        Some(card) if detail.seasons.is_empty() || !detail.episodes.is_empty() => {
-                            Some(Action::Play(card))
+                        Some(card) => Some(Action::Play(card)),
+                        None => {
+                            detail.seasons.first().map(|season| Action::Open(season.id.clone()))
                         }
-                        Some(season) => Some(Action::Open(season.id.clone())),
-                        None => Some(Action::PlayShow),
                     };
                 }
                 if let Some(card) = &playable(detail)
