@@ -1,0 +1,56 @@
+//! Where the app keeps state, and how it decides where that is.
+//!
+//! One JSON file next to the platform's application directory: the session is a refresh token, a
+//! profile token and a profile id, and losing it costs one sign-in. Nothing else is stored.
+
+use std::path::PathBuf;
+
+/// `~/Library/Application Support/drtv-desktop` on macOS, `$XDG_DATA_HOME/drtv-desktop` (or
+/// `~/.local/share/drtv-desktop`) on Linux, `%APPDATA%\drtv-desktop` on Windows.
+pub fn data_dir() -> PathBuf {
+    platform_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+pub fn session_path() -> PathBuf {
+    data_dir().join("session.json")
+}
+
+/// Log to stderr, and to `RUST_LOG`'s rules. `drtv_app=debug` shows screen and request chatter;
+/// the default is warnings only, so a release build is silent.
+pub fn init_tracing() {
+    use tracing_subscriber::{EnvFilter, fmt};
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,drtv_api=info,drtv_app=info,drtv_net=info"));
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
+#[cfg(target_os = "macos")]
+fn platform_dir() -> Option<PathBuf> {
+    Some(home()?.join("Library/Application Support/drtv-desktop"))
+}
+
+#[cfg(target_os = "windows")]
+fn platform_dir() -> Option<PathBuf> {
+    let appdata = std::env::var_os("APPDATA")?;
+    Some(PathBuf::from(appdata).join("drtv-desktop"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn platform_dir() -> Option<PathBuf> {
+    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME")
+        && !xdg.is_empty()
+    {
+        return Some(PathBuf::from(xdg).join("drtv-desktop"));
+    }
+    Some(home()?.join(".local/share/drtv-desktop"))
+}
+
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+}
