@@ -241,11 +241,17 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ inputs.tag || github.ref_name }}"
+          title="DRTV desktop $tag"
           notes="docs/releases/$tag.md"
-          args=(--title "DRTV desktop $tag" --verify-tag)
+          text=(--generate-notes)
           if [ -f "$notes" ]; then
-            args+=(--notes-file "$notes")
-          else
-            args+=(--generate-notes)
+            text=(--notes-file "$notes")
           fi
-          gh release create "$tag" dist/* "${args[@]}"
+          # Re-running a tag has to work: a release that is already up gets its files replaced
+          # rather than a second, empty one beside it.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --title "$title" "${text[@]}"
+          else
+            gh release create "$tag" dist/* --title "$title" --verify-tag "${text[@]}"
+          fi
