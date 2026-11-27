@@ -92,6 +92,8 @@ pub struct DrtvApp {
     pub(crate) images: ImageCache,
     pub(crate) home: Load<Vec<Shelf>>,
     pub(crate) detail: Load<Detail>,
+    /// The other episodes of the season an episode belongs to. Empty for everything else.
+    pub(crate) siblings: Load<Detail>,
     pub(crate) search: SearchState,
     pub(crate) account: AccountState,
     pub(crate) playback: Option<Playback>,
@@ -126,6 +128,7 @@ impl DrtvApp {
             images: ImageCache::new(),
             home: Load::Loading,
             detail: Load::Loading,
+            siblings: Load::Loading,
             search: SearchState {
                 term: String::new(),
                 load: Load::Loading,
@@ -214,6 +217,7 @@ impl DrtvApp {
             }
             Route::Detail(id) => {
                 self.detail = Load::Loading;
+                self.siblings = Load::Loading;
                 let _ = api.send(Cmd::Detail { id, generation });
             }
             Route::Account => {
@@ -334,6 +338,14 @@ impl DrtvApp {
                         }
                         Err(why) => Load::Failed(why),
                     };
+                    if let Load::Ready(detail) = &self.detail
+                        && !detail.card.season_id.is_empty()
+                    {
+                        // An episode page is otherwise the only page in the app with nothing under
+                        // its hero: the episode has no children of its own, its season does.
+                        let id = detail.card.season_id.clone();
+                        let _ = self.workers.api().send(Cmd::Siblings { id, generation });
+                    }
                     if self.autoplay
                         && let Load::Ready(detail) = &self.detail
                     {
@@ -342,6 +354,15 @@ impl DrtvApp {
                             self.play(card);
                         }
                     }
+                }
+                Msg::Siblings { generation, result } if generation == self.generation => {
+                    self.siblings = match result {
+                        Ok(mut detail) => {
+                            self.resume_marks(&mut detail);
+                            Load::Ready(detail)
+                        }
+                        Err(_) => Load::Ready(Detail::default()),
+                    };
                 }
                 Msg::Stream { generation, result } if generation == self.generation => match result
                 {

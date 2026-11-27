@@ -20,6 +20,11 @@ pub enum Cmd {
         id: String,
         generation: u64,
     },
+    /// The rest of an episode's season, so an episode page can show what else is in it.
+    Siblings {
+        id: String,
+        generation: u64,
+    },
     Search {
         term: String,
         generation: u64,
@@ -61,6 +66,7 @@ pub enum Cmd {
 pub enum Msg {
     Home { generation: u64, result: Result<Vec<card::Shelf>, String> },
     Detail { generation: u64, result: Result<card::Detail, String> },
+    Siblings { generation: u64, result: Result<card::Detail, String> },
     Search { generation: u64, result: Result<Vec<card::Shelf>, String> },
     Stream { generation: u64, result: Result<Stream, String> },
     Image { url: String, result: Result<egui::ColorImage, String> },
@@ -230,6 +236,15 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
                 });
             };
             Some(Msg::Detail { generation, result: Ok(card::detail(&item, &watches)) })
+        }
+
+        Cmd::Siblings { id, generation } => {
+            let stored = session();
+            let watches = api::watched(&token(&stored));
+            let Some(item) = api::expanded(&id) else {
+                return Some(Msg::Siblings { generation, result: Err(String::new()) });
+            };
+            Some(Msg::Siblings { generation, result: Ok(card::detail(&item, &watches)) })
         }
 
         Cmd::Search { term, generation } => {

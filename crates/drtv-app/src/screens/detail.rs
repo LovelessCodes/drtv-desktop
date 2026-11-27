@@ -37,6 +37,21 @@ impl DrtvApp {
                     (width * 2.0 / 16.0 * 9.0) as u32,
                 );
 
+                // An episode has no children of its own, so its page is the one page with nothing
+                // under the hero. Its season does, and those are the rows worth having there.
+                let (siblings, season_title): (Vec<Card>, String) = match &self.siblings {
+                    Load::Ready(season) if !season.episodes.is_empty() => (
+                        season
+                            .episodes
+                            .iter()
+                            .filter(|episode| episode.id != detail.card.id)
+                            .cloned()
+                            .collect(),
+                        season.card.title.clone(),
+                    ),
+                    _ => (Vec::new(), String::new()),
+                };
+
                 let mut action: Option<Action> = None;
                 egui::ScrollArea::vertical()
                     .id_salt(("detail", id))
@@ -73,6 +88,41 @@ impl DrtvApp {
                                         }
                                     });
                                     ui.add_space(22.0);
+                                }
+
+                                if !siblings.is_empty() {
+                                    prefetch_wide(
+                                        &mut self.images,
+                                        &self.workers,
+                                        &siblings,
+                                        160.0,
+                                    );
+                                    ui.label(
+                                        RichText::new(if detail.card.season > 0 {
+                                            format!("Afsnit i sæson {}", detail.card.season)
+                                        } else {
+                                            "Andre afsnit".to_string()
+                                        })
+                                        .font(theme::semibold(19.0))
+                                        .color(TEXT),
+                                    );
+                                    ui.add_space(6.0);
+                                    let images = &self.images;
+                                    let lookup = |url: &str| images.get(url);
+                                    for episode in &siblings {
+                                        if episode_row(
+                                            ui,
+                                            episode,
+                                            &season_title,
+                                            &lookup,
+                                            ui.available_width(),
+                                        )
+                                        .clicked()
+                                        {
+                                            action = Some(Action::Play(episode.clone()));
+                                        }
+                                    }
+                                    ui.add_space(20.0);
                                 }
 
                                 if !detail.episodes.is_empty() {
