@@ -326,6 +326,15 @@ impl VideoPlayer {
     /// Drain mpv's event queue. Called once per frame.
     pub fn poll(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
+        // `keep-open=yes` means the file is never closed at its end: mpv sits on the last frame and
+        // says so through `eof-reached` instead of sending `end-file`. Without this check the end of
+        // a film is indistinguishable from a viewer pausing at the last frame, and nothing that
+        // should happen at the end — marking it watched, leaving the player — ever happens.
+        if !self.eof && self.mpv.get_property::<bool>("eof-reached").unwrap_or(false) {
+            self.eof = true;
+            events.push(Event::Ended { eof: true, error: None });
+            return events;
+        }
         // A file can produce a burst of events; the queue is finite and a zero timeout returns
         // immediately when it is empty.
         for _ in 0..64 {
