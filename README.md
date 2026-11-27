@@ -32,11 +32,11 @@ libraries through an `$ORIGIN/lib` rpath, so the directory can live in `~/.local
 stick, or wherever. `RUNNING.txt` inside has the two symlinks that put it on your `PATH` and in your
 application menu.
 
-192 libraries travel with it; 29 are the machine's own, because a copy of them could not work: the C
-library and its loader, the OpenGL/Vulkan drivers, and the display server's client libraries. Every
-desktop distribution has all of them and `HOST-LIBS.txt` names them one by one, next to the
-libraries, for the afternoon when one is missing. The build is made against Ubuntu 24.04's glibc, so
-that is the floor.
+libmpv and its whole closure travel with it. What does not travel is the machine's own — the C
+library and its loader, the OpenGL/Vulkan drivers, and the display server's client libraries —
+because a copy of them could not work. Every desktop distribution has all of them, `HOST-LIBS.txt`
+names them one by one next to the libraries, and it is there for the afternoon when one is missing.
+The build is made against Ubuntu 24.04's glibc, so that is the floor.
 
 **Windows** — unzip and run `drtv-desktop.exe`. Keep `libmpv-2.dll` beside it; Windows looks for it
 next to the executable.
