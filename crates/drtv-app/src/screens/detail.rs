@@ -195,16 +195,21 @@ fn hero(
     action: &mut Option<Action>,
 ) {
     let width = ui.available_width();
-    let height = 400.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    // The art is 400 tall; the hero is 56 taller than that, and the fade spends those extra points
+    // reaching the page background. Ending the gradient exactly on the art's last row left a hard
+    // horizontal seam right where the first heading sits.
+    const ART: f32 = 400.0;
+    const TAIL: f32 = 56.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(width, ART + TAIL), Sense::hover());
+    let art = Rect::from_min_size(rect.min, vec2(width, ART));
 
     // Artwork, cover-cropped. A title with no landscape art falls back to its poster, cropped.
     let texture = images.get(&detail.card.still).or_else(|| images.get(&detail.card.poster));
     if let Some(texture) = texture {
-        let uv = widgets::cover_uv(texture.size_vec2(), rect.size());
-        ui.painter().image(texture.id(), rect, uv, egui::Color32::WHITE);
+        let uv = widgets::cover_uv(texture.size_vec2(), art.size());
+        ui.painter().image(texture.id(), art, uv, egui::Color32::WHITE);
     } else {
-        ui.painter().rect_filled(rect, 0.0, SURFACE);
+        ui.painter().rect_filled(art, 0.0, SURFACE);
     }
 
     // Two gradients: the top one lets the nav bar sit on the art, the bottom one hands the art back
@@ -217,13 +222,13 @@ fn hero(
     );
     // Twice, because one pass of a linear gradient leaves the copy sitting on a bright scene at
     // roughly 40% black; the second pass is what makes white text readable over sunlit footage.
-    let fade = Rect::from_min_max(pos2(rect.left(), rect.top() + 120.0), rect.max);
+    let fade = Rect::from_min_max(pos2(rect.left(), art.top() + 120.0), rect.max);
     widgets::gradient(ui, fade, Color32::TRANSPARENT, BG);
     widgets::gradient(ui, fade, Color32::TRANSPARENT, BG);
 
     let content = Rect::from_min_max(
-        pos2(rect.left() + 40.0, rect.top() + 118.0),
-        pos2(rect.right() - 40.0, rect.bottom() - 18.0),
+        pos2(rect.left() + 40.0, art.top() + 118.0),
+        pos2(rect.right() - 40.0, art.bottom() - 18.0),
     );
     ui.scope_builder(
         UiBuilder::new().max_rect(content).layout(Layout::top_down(Align::Min)),
@@ -316,6 +321,11 @@ fn hero(
             });
         },
     );
+
+    // **`scope_builder` hands its child's height back to the cursor**, and the hero's copy is much
+    // shorter than the artwork behind it: without this the page resumed 128 points early and the
+    // first heading landed inside the backdrop.
+    ui.advance_cursor_after_rect(rect);
 }
 
 /// DR titles an episode `"Show: Episode name"`, which repeats the heading directly above the row.
