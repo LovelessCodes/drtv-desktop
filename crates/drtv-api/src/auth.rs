@@ -88,6 +88,28 @@ impl DeviceCode {
         };
         format!("DRTV login: {url} — kode {}", self.user_code)
     }
+
+    /// The activation page with the code already filled in.
+    ///
+    /// DR sends `verification_uri_complete` for exactly this; when it does not, the short code goes
+    /// on the query string of whatever page it did send, because reading eight characters off one
+    /// screen to type them on another is a step worth deleting. `None` means the reply gave neither
+    /// half, and the caller has nothing honest to open.
+    pub fn activate_url(&self) -> Option<String> {
+        if !self.verification_uri_complete.is_empty() {
+            return Some(self.verification_uri_complete.clone());
+        }
+        if self.user_code.is_empty() {
+            return None;
+        }
+        let base = if self.verification_uri.is_empty() {
+            "https://www.dr.dk/aktiver"
+        } else {
+            self.verification_uri.as_str()
+        };
+        let separator = if base.contains('?') { '&' } else { '?' };
+        Some(format!("{base}{separator}code={}", self.user_code))
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -923,6 +945,37 @@ mod tests {
         assert_eq!(c.user_code, "WBTV-JZQL");
         assert_eq!(c.interval, 5);
         assert_eq!(c.expires_in, 600);
+        // DR's own prefilled link wins over anything this crate would build.
+        assert_eq!(c.activate_url().as_deref(), Some("https://www.dr.dk/aktiver?code=WBTV-JZQL"));
+    }
+
+    #[test]
+    fn an_activation_link_is_built_from_the_short_code_when_dr_omits_one() {
+        let c = DeviceCode {
+            user_code: "TSDT-LNWR".into(),
+            verification_uri: "https://www.dr.dk/aktiver".into(),
+            ..Default::default()
+        };
+        assert_eq!(c.activate_url().as_deref(), Some("https://www.dr.dk/aktiver?code=TSDT-LNWR"));
+
+        let already_query = DeviceCode {
+            user_code: "TSDT-LNWR".into(),
+            verification_uri: "https://www.dr.dk/aktiver?lang=da".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            already_query.activate_url().as_deref(),
+            Some("https://www.dr.dk/aktiver?lang=da&code=TSDT-LNWR")
+        );
+
+        let bare = DeviceCode { user_code: "TSDT-LNWR".into(), ..Default::default() };
+        assert_eq!(
+            bare.activate_url().as_deref(),
+            Some("https://www.dr.dk/aktiver?code=TSDT-LNWR")
+        );
+
+        let no_code = DeviceCode::default();
+        assert_eq!(no_code.activate_url(), None);
     }
 
     #[test]

@@ -13,10 +13,6 @@ use egui::{RichText, Ui, pos2, vec2};
 use crate::app::DrtvApp;
 use crate::worker::Cmd;
 
-/// Where a person types the code. The device flow's own `verification_uri` is DR's, but a hard-coded
-/// fallback means a click still works when the response omitted it.
-const ACTIVATE_URL: &str = "https://www.dr.dk/aktiver";
-
 impl DrtvApp {
     pub(crate) fn account_ui(&mut self, ui: &mut Ui) {
         egui::Frame::NONE.inner_margin(egui::Margin::symmetric(28, 24)).show(ui, |ui| {
@@ -65,11 +61,32 @@ impl DrtvApp {
         let polling = self.account.polling;
         match &code {
             Some(code) => {
-                ui.label(
-                    RichText::new("Indtast koden på dr.dk/aktiver")
-                        .font(theme::medium(15.0))
-                        .color(TEXT),
-                );
+                // The code is prefilled into the link DR hands out, so the page opens with the
+                // eight characters already in the boxes; typing them is only for another device.
+                let activate = code.activate_url();
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.label(
+                        RichText::new("Indtast koden på ").font(theme::medium(15.0)).color(TEXT),
+                    );
+                    if let Some(url) = &activate {
+                        ui.scope(|ui| {
+                            // A link in body colour: red is the wordmark's, the play button's and
+                            // the progress fill's, and nothing else's.
+                            ui.visuals_mut().hyperlink_color = TEXT;
+                            let link = ui.add(egui::Link::new(
+                                RichText::new("dr.dk/aktiver").font(theme::medium(15.0)),
+                            ));
+                            if link.clicked() {
+                                self.open_activate(url.clone());
+                            }
+                        });
+                    } else {
+                        ui.label(
+                            RichText::new("dr.dk/aktiver").font(theme::medium(15.0)).color(TEXT),
+                        );
+                    }
+                });
                 ui.add_space(10.0);
 
                 let (rect, _) = ui.allocate_exact_size(vec2(280.0, 74.0), egui::Sense::hover());
@@ -94,15 +111,10 @@ impl DrtvApp {
 
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
-                    if widgets::primary_button(ui, "Åbn dr.dk/aktiver", None).clicked() {
-                        let url = if code.verification_uri.is_empty() {
-                            ACTIVATE_URL.to_string()
-                        } else {
-                            code.verification_uri.clone()
-                        };
-                        if webbrowser::open(&url).is_err() {
-                            self.toast(format!("Kunne ikke åbne browseren. Gå til {url}"));
-                        }
+                    if widgets::primary_button(ui, "Åbn dr.dk/aktiver", None).clicked()
+                        && let Some(url) = &activate
+                    {
+                        self.open_activate(url.clone());
                     }
                     if polling {
                         ui.spinner();
@@ -138,6 +150,13 @@ impl DrtvApp {
             .font(theme::regular(12.5))
             .color(TEXT_FAINT),
         );
+    }
+
+    /// Open DR's activation page, and say so if the machine has no browser to open it with.
+    fn open_activate(&mut self, url: String) {
+        if webbrowser::open(&url).is_err() {
+            self.toast(format!("Kunne ikke åbne browseren. Gå til {url}"));
+        }
     }
 
     fn request_code(&mut self) {
