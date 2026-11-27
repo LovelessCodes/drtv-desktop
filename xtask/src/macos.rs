@@ -67,7 +67,9 @@ pub fn bundle(root: &Path) -> Result<(), String> {
     // computer, in a bundle meant for everyone else.
     for rpath in rpaths(&executable)? {
         if !rpath.starts_with("@executable_path") {
-            run(Command::new("install_name_tool").args(["-delete_rpath", &rpath]).arg(&executable))?;
+            run(Command::new("install_name_tool")
+                .args(["-delete_rpath", &rpath])
+                .arg(&executable))?;
         }
     }
 
@@ -191,11 +193,8 @@ fn dependencies(file: &Path) -> Result<Vec<PathBuf>, String> {
 
 /// The `LC_RPATH` entries a Mach-O carries.
 fn rpaths(file: &Path) -> Result<Vec<String>, String> {
-    let out = Command::new("otool")
-        .args(["-l"])
-        .arg(file)
-        .output()
-        .map_err(|e| format!("otool: {e}"))?;
+    let out =
+        Command::new("otool").args(["-l"]).arg(file).output().map_err(|e| format!("otool: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
     // `paths` is the `path …` line under each `cmd LC_RPATH` block; matching the line itself is
     // simpler than counting the fields in between.
