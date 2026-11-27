@@ -123,6 +123,10 @@ pub struct DrtvApp {
 impl DrtvApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::install(&cc.egui_ctx);
+        // Before anything asks `auth` where the session lives: the library's defaults are a
+        // television's `/media/developer`, and on a desktop that is a flow which completes at DR and
+        // then cannot write the token it was just given.
+        auth::set_auth_path(crate::config::session_path());
         let stored = auth::load();
         let mut app = Self {
             route: Route::Home,
