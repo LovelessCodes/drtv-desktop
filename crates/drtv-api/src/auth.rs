@@ -817,13 +817,13 @@ pub fn ensure_fresh() -> Freshness {
     if !needs_refresh(&stored, now()) {
         // A session saved before the name was carried has none, and the account menu would show a
         // placeholder until the next sign-in. One profile call fixes that for good.
-        if stored.name.is_empty() {
-            if let Some(name) = profile_name(&stored.profile) {
-                let mut named = stored.clone();
-                named.name = name;
-                save(&named);
-                return Freshness::Ok(named);
-            }
+        if stored.name.is_empty()
+            && let Some(name) = profile_name(&stored.profile)
+        {
+            let mut named = stored.clone();
+            named.name = name;
+            save(&named);
+            return Freshness::Ok(named);
         }
         return Freshness::Ok(stored);
     }

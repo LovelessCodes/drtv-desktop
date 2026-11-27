@@ -368,9 +368,7 @@ fn api_command(cmd: Cmd) -> Option<Msg> {
         }
 
         Cmd::Progress { item_id, position } => {
-            let Some(stored) = session() else {
-                return None;
-            };
+            let stored = session()?;
             Some(Msg::Progress(api::set_watched(&stored.profile, &item_id, position.max(0))))
         }
 

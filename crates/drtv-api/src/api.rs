@@ -319,10 +319,7 @@ pub fn lists(ids: &[String], universe: &crate::auth::Universe) -> Vec<List> {
     }
     let ids = ids.iter().map(|id| format!("{id}%7Cpage_size%3D24")).collect::<Vec<_>>().join("%2C");
     let url = format!("{}/lists?{}&ids={ids}", tv_api_base(), tv_params(universe));
-    match get_url(&url).and_then(|body| serde_json::from_str(&body).ok()) {
-        Some(lists) => lists,
-        None => Vec::new(),
-    }
+    get_url(&url).and_then(|body| serde_json::from_str(&body).ok()).unwrap_or_default()
 }
 
 fn get_url(url: &str) -> Option<String> {
@@ -498,8 +495,8 @@ pub fn stream_file(files: &[File]) -> Option<&File> {
 ///   dead endpoint rather than a missing body.
 /// - `position` past the item's duration is what makes the service call it fully watched; the
 ///   probe used 60000 s for that. [`Self::watched_position`] picks the honest number per item.
-/// `Err(status)` carries the HTTP status, or `-1` for no response at all — the caller owns the log
-/// line, because this crate may not name the app's event log (module layering).
+/// - `Err(status)` carries the HTTP status, or `-1` for no response at all — the caller owns the log
+///   line, because this crate may not name the app's event log (module layering).
 pub fn set_watched(profile_token: &str, item_id: &str, position_secs: i64) -> Result<(), i32> {
     if profile_token.is_empty() || item_id.is_empty() {
         return Err(-1);

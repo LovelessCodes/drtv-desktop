@@ -132,9 +132,7 @@ pub fn card(item: &Item, watch: Option<&Watch>) -> Card {
     let kind = Kind::parse(&item.kind);
     // A portrait tile wants 2:3 art. An episode's own art is 16:9, so its tile uses the show's
     // poster; a search result or an episode row draws `still` instead.
-    let poster = if kind == Kind::Episode {
-        sized(&item.images.poster, 480, 720)
-    } else if !item.images.poster.is_empty() {
+    let poster = if kind == Kind::Episode || !item.images.poster.is_empty() {
         sized(&item.images.poster, 480, 720)
     } else if !item.images.tile.is_empty() {
         sized(&item.images.tile, 480, 720)

@@ -48,7 +48,7 @@ pub fn bundle(root: &Path) -> Result<(), String> {
     }
 
     // Rewrite before signing: every library's own id, then every reference to a library we copied.
-    for (name, _) in &closure {
+    for name in closure.keys() {
         let target = frameworks.join(name);
         run(Command::new("install_name_tool")
             .arg("-id")
@@ -56,7 +56,7 @@ pub fn bundle(root: &Path) -> Result<(), String> {
             .arg(&target))?;
     }
     rewrite(&executable, &closure)?;
-    for (name, _) in &closure {
+    for name in closure.keys() {
         rewrite(&frameworks.join(name), &closure)?;
     }
     run(Command::new("install_name_tool")
@@ -75,7 +75,7 @@ pub fn bundle(root: &Path) -> Result<(), String> {
 
     // Ad hoc, but a signature nonetheless: an arm64 dylib without one is not loaded at all.
     run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&executable))?;
-    for (name, _) in &closure {
+    for name in closure.keys() {
         run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(frameworks.join(name)))?;
     }
     run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&app))?;

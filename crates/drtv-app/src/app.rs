@@ -16,6 +16,10 @@ use crate::worker::{Cmd, Msg, PollState, Workers};
 use drtv_ui::icons;
 use drtv_ui::theme::{self, ACCENT, BG, BORDER, SURFACE, TEXT, TEXT_DIM, TEXT_FAINT};
 
+/// The window's OpenGL proc-address loader, spelled once: it is `egui_glow`'s, passed through to
+/// mpv's render API so mpv can resolve the GL entry points of whichever context the window made.
+pub(crate) type GetProcAddress = dyn Fn(&std::ffi::CStr) -> *const std::ffi::c_void + Send + Sync;
+
 /// Where the app is. `Detail` carries the id so a reload and a navigation are the same request.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Route {
@@ -102,8 +106,7 @@ pub struct DrtvApp {
     pub(crate) playback: Option<Playback>,
     pub(crate) player: Option<drtv_player::VideoPlayer>,
     pub(crate) gl: Option<Arc<glow::Context>>,
-    pub(crate) loader:
-        Option<Arc<dyn Fn(&std::ffi::CStr) -> *const std::ffi::c_void + Send + Sync>>,
+    pub(crate) loader: Option<Arc<GetProcAddress>>,
     /// Bumped on every navigation the screen should respond to; a message carrying an older
     /// generation belongs to a screen the viewer already left.
     pub(crate) generation: u64,
@@ -328,7 +331,7 @@ impl eframe::App for DrtvApp {
             let position = self
                 .player
                 .as_ref()
-                .and_then(|p| drtv_player::Backend::position(p))
+                .and_then(drtv_player::Backend::position)
                 .unwrap_or(playback.last_position);
             if position > 5.0 {
                 let _ = self.workers.api().send(Cmd::Progress {
@@ -491,10 +494,8 @@ impl DrtvApp {
                     self.home = Load::Loading;
                     self.load(Route::Home);
                 }
-                Msg::Progress(result) => {
-                    if let Err(status) = result {
-                        tracing::debug!("progress write refused with HTTP {status}");
-                    }
+                Msg::Progress(Err(status)) => {
+                    tracing::debug!("progress write refused with HTTP {status}");
                 }
                 // A message for a screen the viewer already left: dropping it is the point of the
                 // generation counter.
@@ -586,12 +587,8 @@ impl DrtvApp {
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.egui_wants_keyboard_input();
         ctx.input(|i| {
-            if i.key_pressed(egui::Key::Escape) {
-                if self.route == Route::Player {
-                    self.back();
-                } else if self.route != Route::Home {
-                    self.back();
-                }
+            if i.key_pressed(egui::Key::Escape) && self.route != Route::Home {
+                self.back();
             }
             if typing {
                 return;
