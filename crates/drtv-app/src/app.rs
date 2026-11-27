@@ -110,6 +110,9 @@ pub struct DrtvApp {
     /// smoke test needs a way past the mouse; nothing else sets this.
     pub(crate) autoplay: bool,
     pub(crate) timeout: Duration,
+    /// How far the viewer got, per title, on this machine. Written while playing and read when a
+    /// title opens, so the player resumes even for a viewer who never signed in.
+    pub(crate) progress: crate::progress::Progress,
 }
 
 impl DrtvApp {
@@ -148,6 +151,7 @@ impl DrtvApp {
             pending_fullscreen: None,
             autoplay: false,
             timeout: Duration::from_secs(4),
+            progress: crate::progress::Progress::load(&crate::config::progress_path()),
         };
         app.load(Route::Home);
         if app.account.signed_in {
@@ -169,6 +173,24 @@ impl DrtvApp {
             }
         }
         app
+    }
+
+    /// Put this machine's own positions onto a freshly loaded detail page.
+    ///
+    /// DR's watch marks only exist for a signed-in profile; these exist for everyone, and the later
+    /// of the two wins, so signing in tomorrow does not undo a session watched tonight.
+    fn resume_marks(&self, detail: &mut Detail) {
+        let local = |card: &mut drtv_api::card::Card| {
+            if let Some(seconds) = self.progress.get(&card.id)
+                && seconds * 1000 > card.resume_ms
+            {
+                card.resume_ms = seconds * 1000;
+            }
+        };
+        local(&mut detail.card);
+        for episode in &mut detail.episodes {
+            local(episode);
+        }
     }
 
     /// Ask the workers for whatever the route needs. Called on entry to a route, never per frame.
@@ -277,6 +299,8 @@ impl eframe::App for DrtvApp {
                     position: position.round() as i64,
                 });
             }
+            self.progress.set(&playback.card.id, position, playback.duration);
+            self.progress.save(&crate::config::progress_path());
         }
         if let Some(player) = &self.player {
             drtv_player::Backend::stop(player);
@@ -304,7 +328,10 @@ impl DrtvApp {
                 }
                 Msg::Detail { generation, result } if generation == self.generation => {
                     self.detail = match result {
-                        Ok(detail) => Load::Ready(detail),
+                        Ok(mut detail) => {
+                            self.resume_marks(&mut detail);
+                            Load::Ready(detail)
+                        }
                         Err(why) => Load::Failed(why),
                     };
                     if self.autoplay

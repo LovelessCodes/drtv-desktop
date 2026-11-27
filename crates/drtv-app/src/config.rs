@@ -15,6 +15,11 @@ pub fn session_path() -> PathBuf {
     data_dir().join("session.json")
 }
 
+/// Where the machine remembers how far the viewer got, whether or not they signed in.
+pub fn progress_path() -> PathBuf {
+    data_dir().join("progress.json")
+}
+
 /// The typeface libmpv needs on disk to draw subtitles in.
 ///
 /// egui gets its fonts compiled into the binary; mpv can only be told about a directory, so the

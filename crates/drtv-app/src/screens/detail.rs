@@ -307,9 +307,12 @@ fn hero(
                         *action = Some(Action::Restart(card.clone()));
                     }
                     ui.label(
-                        RichText::new(format!("{} set", theme::length(card.resume_seconds())))
-                            .color(TEXT_FAINT)
-                            .size(12.5),
+                        RichText::new(format!(
+                            "{} set",
+                            drtv_player::clock(card.resume_seconds() as f64)
+                        ))
+                        .color(TEXT_FAINT)
+                        .size(12.5),
                     );
                 }
                 if detail.card.kind == "episode"

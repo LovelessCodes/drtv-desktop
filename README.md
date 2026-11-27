@@ -71,6 +71,14 @@ rewriting every install name to `@rpath/…` and re-signing ad hoc. The result r
 has never had Homebrew installed. Windows and Linux packaging is not written yet; the app builds and
 runs there against a system or vendored libmpv.
 
+## Where it remembers you
+
+Signing in is optional: browsing, search and playback all work anonymously. DR keeps a watch
+position per *profile*, though, which means an anonymous viewer gets no resume at all. So the app
+keeps its own: `progress.json` in the data directory, written while a title plays and read when it
+opens, and a title watched to the end is forgotten rather than offered its last two minutes again.
+The later of the two positions wins, so signing in tomorrow does not undo tonight.
+
 ## Keys
 
 | Key | Does |

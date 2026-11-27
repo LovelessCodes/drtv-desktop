@@ -7,6 +7,7 @@
 pub mod app;
 pub mod config;
 pub mod images;
+pub mod progress;
 pub mod screens;
 pub mod worker;
 

@@ -502,12 +502,15 @@ impl DrtvApp {
             .unwrap_or_else(|| self.playback.as_ref().map_or(0.0, |p| p.last_position));
         if let Some(playback) = &self.playback
             && report
-            && position > 5.0
         {
-            let _ = self.workers.api().send(Cmd::Progress {
-                item_id: playback.card.id.clone(),
-                position: position.round() as i64,
-            });
+            if position > 5.0 {
+                let _ = self.workers.api().send(Cmd::Progress {
+                    item_id: playback.card.id.clone(),
+                    position: position.round() as i64,
+                });
+            }
+            self.progress.set(&playback.card.id, position, playback.duration);
+            self.progress.save(&crate::config::progress_path());
         }
         if let Some(player) = &self.player {
             player.stop();
@@ -563,6 +566,10 @@ impl DrtvApp {
                     .workers
                     .api()
                     .send(Cmd::Progress { item_id: playback.card.id.clone(), position: length });
+                // Finished, so there is nothing to resume — the page should offer the next
+                // episode, not the last two minutes of this one.
+                self.progress.clear(&playback.card.id);
+                self.progress.save(&crate::config::progress_path());
                 self.toast("Markeret som set");
             }
             self.stop_playback(false);
@@ -582,6 +589,8 @@ impl DrtvApp {
                 item_id: playback.card.id.clone(),
                 position: position.round() as i64,
             });
+            self.progress.set(&playback.card.id, position, playback.duration);
+            self.progress.save(&crate::config::progress_path());
         }
 
         // The clock in the HUD has to tick even when mpv has no new frame to show.
