@@ -1,3 +1,10 @@
 # `cargo xtask <command>` runs the workspace member that does the chores.
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# The Windows build carries its own C runtime. Without this the exe imports VCRUNTIME140.dll, which
+# a clean Windows does not have until somebody installs the Visual C++ redistributable — the sort of
+# first-launch failure nobody reports, they just close the app. `target.*` flags apply to the target
+# only, so build scripts and proc macros keep the host's dynamic runtime.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

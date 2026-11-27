@@ -104,12 +104,17 @@ pub fn bundle(root: &Path) -> Result<(), String> {
     copy_into(&root.join("LICENSE"), &out.join("LICENSE"))?;
     copy_into(&root.join("README.md"), &out.join("README.md"))?;
     std::fs::write(out.join("drtv-desktop.desktop"), desktop()).map_err(|e| e.to_string())?;
-    std::fs::write(out.join("RUNNING.txt"), running(&closure)).map_err(|e| e.to_string())?;
 
-    verify(&binary, &closure)?;
+    let (host, unexplained) = audit(&binary, &closure)?;
+    if !unexplained.is_empty() {
+        return Err(format!("this tarball is not self-contained:\n  {}", unexplained.join("\n  ")));
+    }
+    std::fs::write(out.join("HOST-LIBS.txt"), host_libs(&host)).map_err(|e| e.to_string())?;
+    std::fs::write(out.join("RUNNING.txt"), running(&closure, &host)).map_err(|e| e.to_string())?;
 
     println!("\n{}", out.display());
     println!("  {} bundled libraries", closure.len());
+    println!("  {} expected from the host", host.len());
     Ok(())
 }
 
@@ -194,34 +199,55 @@ fn patchelf(args: &[&str], file: &Path) -> Result<(), String> {
 /// It asks each object what it declares in `DT_NEEDED` rather than asking `ldd`, because `ldd`
 /// answers for the whole load: the host's `libgbm` pulls in the host's `libexpat`, and a check that
 /// counted those would refuse a tarball that is perfectly complete.
-fn verify(binary: &Path, closure: &BTreeMap<String, PathBuf>) -> Result<(), String> {
-    let mut wrong = Vec::new();
+///
+/// Returns what the host is expected to bring, and what nobody was going to bring.
+fn audit(
+    binary: &Path,
+    closure: &BTreeMap<String, PathBuf>,
+) -> Result<(BTreeSet<String>, Vec<String>), String> {
     let lib = binary.parent().map(|dir| dir.join("lib")).unwrap_or_default();
     let mut files = vec![binary.to_path_buf()];
     files.extend(closure.keys().map(|name| lib.join(name)));
+
+    let mut host = BTreeSet::new();
+    let mut unexplained = Vec::new();
     for file in &files {
         for name in needed(file)? {
-            if closure.contains_key(&name) && !host_owned(&name) {
-                continue;
-            }
             if host_owned(&name) {
-                continue;
+                host.insert(name);
+            } else if !closure.contains_key(&name) {
+                let who = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                unexplained
+                    .push(format!("{who} needs {name}, which is in neither `lib/` nor the host"));
             }
-            wrong.push(format!(
-                "{} needs {name}, which is in neither `lib/` nor the host",
-                file.display()
-            ));
         }
-    }
-    if !wrong.is_empty() {
-        return Err(format!("this tarball is not self-contained:\n  {}", wrong.join("\n  ")));
     }
     for name in closure.keys() {
         if host_owned(name) {
             return Err(format!("{name} was bundled, but it belongs to the host"));
         }
     }
-    Ok(())
+    Ok((host, unexplained))
+}
+
+/// The list shipped beside the libraries, because the moment the app refuses to start is the moment
+/// this file is worth reading.
+fn host_libs(host: &BTreeSet<String>) -> String {
+    let mut text = String::from(
+        "Libraries this build expects the machine to provide.\n\
+         \n\
+         They are here because they are the machine's: the C library and its loader, the OpenGL\n\
+         and Vulkan drivers, and the display server's client libraries. A copy inside `lib/` would\n\
+         be a copy that has to match a driver and a kernel it was not built against. Every desktop\n\
+         distribution ships all of them; a container that has none of them is not a desktop.\n\
+         \n",
+    );
+    for name in host {
+        text.push_str("  ");
+        text.push_str(name);
+        text.push('\n');
+    }
+    text
 }
 
 /// The sonames an ELF declares it needs, from its own dynamic section.
@@ -262,7 +288,7 @@ fn desktop() -> String {
     )
 }
 
-fn running(closure: &BTreeMap<String, PathBuf>) -> String {
+fn running(closure: &BTreeMap<String, PathBuf>, host: &BTreeSet<String>) -> String {
     format!(
         "{APP} desktop — unofficial, not affiliated with DR.\n\
          \n\
@@ -275,9 +301,11 @@ fn running(closure: &BTreeMap<String, PathBuf>) -> String {
          data directory (~/.local/share/{BINARY}, or `$XDG_DATA_HOME`).\n\
          \n\
          It draws its window with the desktop's own toolchains, so the machine needs what every\n\
-         other desktop application already has: an X11 or Wayland client library, `libxkbcommon`\n\
-         with its `libxkbcommon-x11` half, and a GL driver. The C library, the driver and those\n\
-         client libraries are deliberately not inside `lib/`: they have to match the host.\n\
+         other desktop application already has: an X11 or Wayland client library (including\n\
+         libXfixes, libwayland-cursor and libxkbcommon with its libxkbcommon-x11 half) and a GL\n\
+         driver. The C library, the driver and those client libraries are deliberately not inside\n\
+         `lib/`: they have to match the host. Ubuntu 24.04 and newer, and distributions of that\n\
+         age, are what this archive is built against.\n\
          \n\
          To install it for the current user, unpack it to ~/.local/opt and link the two files:\n\
          \n\
@@ -285,9 +313,11 @@ fn running(closure: &BTreeMap<String, PathBuf>) -> String {
          \tcp ~/.local/opt/{dir}/drtv-desktop.desktop ~/.local/share/applications/\n\
          \tcp ~/.local/opt/{dir}/drtv-desktop.png ~/.local/share/icons/\n\
          \n\
-         {n} libraries travel with it (libmpv and its closure); the C library, the graphics driver\n\
-         and X11/Wayland are the machine's own.\n",
+         {n} libraries travel with it (libmpv and its closure); {h} are the machine's own — the C\n\
+         library, the graphics driver, and the display server's client libraries. `HOST-LIBS.txt`\n\
+         names them, and the loader stops before this does if one is missing.\n",
         dir = format!("{BINARY}-linux"),
-        n = closure.len()
+        n = closure.len(),
+        h = host.len()
     )
 }

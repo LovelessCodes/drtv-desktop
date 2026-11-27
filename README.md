@@ -30,8 +30,13 @@ xattr -dr com.apple.quarantine /Applications/DRTV.app
 **Linux** — unpack the tarball anywhere and run `./drtv-desktop` from inside it. The binary finds its
 libraries through an `$ORIGIN/lib` rpath, so the directory can live in `~/.local/opt`, on a USB
 stick, or wherever. `RUNNING.txt` inside has the two symlinks that put it on your `PATH` and in your
-application menu. It needs what any other desktop application needs: an X11 or Wayland client
-library, `libxkbcommon` (with `libxkbcommon-x11`), and a working GL driver.
+application menu.
+
+192 libraries travel with it; 29 are the machine's own, because a copy of them could not work: the C
+library and its loader, the OpenGL/Vulkan drivers, and the display server's client libraries. Every
+desktop distribution has all of them and `HOST-LIBS.txt` names them one by one, next to the
+libraries, for the afternoon when one is missing. The build is made against Ubuntu 24.04's glibc, so
+that is the floor.
 
 **Windows** — unzip and run `drtv-desktop.exe`. Keep `libmpv-2.dll` beside it; Windows looks for it
 next to the executable.

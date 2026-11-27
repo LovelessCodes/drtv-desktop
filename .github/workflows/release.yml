@@ -86,40 +86,11 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: libmpv, patchelf, and a virtual display to open a window on
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libmpv-dev libasound2-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev \
-            libx11-dev libxi-dev libxcursor-dev libxrandr-dev libgl1-mesa-dev libgl1-mesa-dri \
-            patchelf xvfb
-
-      - name: Bundle
-        run: cargo xtask bundle
-
-      # The tarball has to run for somebody who does not have this checkout or this Homebrew, so it
-      # is unpacked and started here the way a user starts it, on a display that is not ours either.
-      - name: It opens a window and stays open
-        run: |
-          set -eux
-          cd target/drtv-desktop-linux
-          log="$RUNNER_TEMP/app.log"
-          xvfb-run -a --server-args="-screen 0 1440x900x24" ./drtv-desktop > "$log" 2>&1 &
-          pid=$!
-          sleep 15
-          if ! kill -0 "$pid" 2>/dev/null; then
-            echo "the app is not running; it said:" >&2
-            cat "$log" >&2
-            exit 1
-          fi
-          kill "$pid"
-          # A window that opened is a window that logged nothing worse than a warning.
-          ! grep -qiE 'panicked|could not be loaded|error while loading' "$log"
+      # The build machine decides the glibc floor of the artifact, and the artifact has to keep
+      # running on distributions older than this year's runner image. The script installs its own
+      # toolchain, bundles, and opens a window on a virtual display before it returns.
+      - name: Bundle inside Ubuntu 24.04
+        run: docker run --rm -v "$PWD:/work" -w /work ubuntu:24.04 ./.github/linux-release.sh
 
       - name: Package
         run: |
@@ -129,7 +100,6 @@ jobs:
           tar -C target -czf "$name.tar.gz" drtv-desktop-linux
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "NAME=$name" >> "$GITHUB_ENV"
-          du -sh "$name.tar.gz"
 
       - uses: actions/upload-artifact@v7
         with:
