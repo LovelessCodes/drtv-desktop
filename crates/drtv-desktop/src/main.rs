@@ -9,7 +9,8 @@ fn main() -> eframe::Result {
             .with_title("DRTV")
             .with_app_id("drtv-desktop")
             .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([1024.0, 700.0]),
+            .with_min_inner_size([1024.0, 700.0])
+            .with_icon(drtv_ui::icon::icon_data(256)),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };

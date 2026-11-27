@@ -4,6 +4,7 @@
 //! Keeping this crate free of app state is what lets a screen stay a layout function: a tile takes a
 //! card and a texture, not a store.
 
+pub mod icon;
 pub mod icons;
 pub mod theme;
 pub mod widgets;

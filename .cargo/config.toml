@@ -1,0 +1,3 @@
+# `cargo xtask <command>` runs the workspace member that does the chores.
+[alias]
+xtask = "run --quiet --package xtask --"

@@ -6,6 +6,7 @@ members = [
     "crates/drtv-ui",
     "crates/drtv-app",
     "crates/drtv-desktop",
+    "xtask",
 ]
 resolver = "3"
 
