@@ -1,0 +1,107 @@
+name: Release
+
+# A tag is the whole trigger: `git tag v0.1.0 && git push origin v0.1.0` builds the bundle on both
+# Mac architectures and publishes it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to rebuild
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macOS:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # An app bundle has to be built on the architecture it links libmpv for, so both Macs
+          # build their own; `macos-latest` is Apple silicon, and `macos-15` is still the Intel one.
+          # The first step refuses the job if a label ever changes meaning under us.
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-15
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check the runner really is ${{ matrix.arch }}
+        run: test "$(uname -m)" = "${{ matrix.arch }}"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install libmpv
+        run: brew install mpv
+
+      - name: Bundle
+        run: cargo xtask bundle
+
+      - name: Check the bundle carries its own libraries
+        run: |
+          set -eux
+          lipo -archs target/DRTV.app/Contents/MacOS/drtv-desktop
+          codesign -v --deep target/DRTV.app
+          # Nothing in the bundle may still be answered by the build machine's Homebrew.
+          ! otool -L target/DRTV.app/Contents/MacOS/drtv-desktop | grep -q /opt/homebrew
+          ! otool -L target/DRTV.app/Contents/MacOS/drtv-desktop | grep -q /usr/local/opt
+          ls target/DRTV.app/Contents/Frameworks | wc -l
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          name="DRTV-${tag#v}-macos-${{ matrix.arch }}"
+          ditto -c -k --sequesterRsrc --keepParent target/DRTV.app "$name.zip"
+          shasum -a 256 "$name.zip" > "$name.zip.sha256"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.zip
+            ${{ env.NAME }}.zip.sha256
+          if-no-files-found: error
+
+  release:
+    needs: macOS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          notes="docs/releases/$tag.md"
+          args=(--title "DRTV desktop $tag" --verify-tag)
+          if [ -f "$notes" ]; then
+            args+=(--notes-file "$notes")
+          else
+            args+=(--generate-notes)
+          fi
+          gh release create "$tag" dist/* "${args[@]}"

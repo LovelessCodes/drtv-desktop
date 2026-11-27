@@ -11,6 +11,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// macOS-only: `bundle` is the whole of it, and an unused module of dead code fails CI's lints.
+#[cfg(target_os = "macos")]
 mod macos;
 
 fn main() {
